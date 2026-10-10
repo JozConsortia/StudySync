@@ -1,0 +1,20 @@
+{
+  "name": "studysync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered exam paper OCR and step-by-step solutions for web, mobile and desktop.",
+  "scripts": {
+    "install:server": "cd server && python -m venv .venv && .venv\\Scripts\\python -m pip install -r requirements.txt",
+    "install:all": "npm run install:server && npm --prefix web install && npm --prefix desktop install && npm --prefix mobile install",
+    "db:init": "cd server && .venv\\Scripts\\python init_db.py",
+    "server": "cd server && .venv\\Scripts\\python run.py --reload",
+    "web": "npm --prefix web run dev",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run server\" \"npm run web\"",
+    "desktop": "npm --prefix web run build && npm --prefix desktop start",
+    "desktop:dist": "npm --prefix desktop run dist",
+    "mobile": "npm --prefix mobile start"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

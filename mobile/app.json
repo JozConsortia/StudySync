@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "StudySync",
+    "slug": "studysync",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#000000",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.studysync.mobile"
+    },
+    "android": {
+      "package": "com.studysync.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#000000",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "StudySync needs access to your photos so you can upload exam papers.",
+          "cameraPermission": "StudySync needs the camera so you can photograph exam papers."
+        }
+      ],
+      "expo-font"
+    ]
+  }
+}
