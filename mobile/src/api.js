@@ -68,9 +68,15 @@ export const api = {
     form.append('file', { uri: file.uri, name: file.name, type: file.mimeType });
     return request('/api/papers/extract', { method: 'POST', form });
   },
-  solve: (question, subject) =>
+  // file: { uri, name, mimeType } of a recorded spoken question
+  transcribe: (file) => {
+    const form = new FormData();
+    form.append('file', { uri: file.uri, name: file.name, type: file.mimeType });
+    return request('/api/papers/transcribe', { method: 'POST', form });
+  },
+  solve: (question, subject, context) =>
     request('/api/papers/solve', {
       method: 'POST',
-      body: { text: question.text, marks: question.marks, subject },
+      body: { text: question.text, marks: question.marks, subject, context },
     }),
 };

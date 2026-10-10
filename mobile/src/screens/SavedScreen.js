@@ -1,12 +1,18 @@
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 import { sharePdf } from '../pdf';
 import { Button, Card } from '../components/ui';
 import SolutionView from '../components/SolutionView';
+import { BotMessage } from '../components/Bot';
+import { ListenButton } from '../components/VoiceButtons';
+import RichText from '../components/RichText';
+import { summarize } from '../richtext';
 
 export default function SavedScreen({ saved, onUnsave, onScan }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
 
@@ -69,8 +75,8 @@ export default function SavedScreen({ saved, onUnsave, onScan }) {
                 <Text style={styles.itemTitle} numberOfLines={1}>
                   {s.paperTitle}
                 </Text>
-                <Text style={styles.muted} numberOfLines={open ? undefined : 1}>
-                  {s.text}
+                <Text style={styles.muted} numberOfLines={1}>
+                  {summarize(s.text)}
                 </Text>
               </View>
               <Feather name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.muted} />
@@ -78,7 +84,10 @@ export default function SavedScreen({ saved, onUnsave, onScan }) {
 
             {open && (
               <>
-                <SolutionView solution={s.solution} />
+                <RichText text={s.text} style={styles.qText} />
+                <BotMessage actions={<ListenButton solution={s.solution} question={s.text} id={`s:${s.id}`} />}>
+                  <SolutionView solution={s.solution} />
+                </BotMessage>
                 <View style={styles.actions}>
                   <Button
                     title="Download"
@@ -104,7 +113,8 @@ export default function SavedScreen({ saved, onUnsave, onScan }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   page: { padding: 16, gap: 14, paddingBottom: 40 },
   h1: { color: colors.text, fontSize: 22, fontWeight: '800' },
   h2: { color: colors.text, fontSize: 18, fontWeight: '700' },
@@ -119,11 +129,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: '#050505',
+    backgroundColor: colors.inputBg,
   },
   searchInput: { flex: 1, color: colors.text, paddingVertical: 11, fontSize: 15 },
   itemHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   itemTitle: { color: colors.text, fontWeight: '700', fontSize: 15 },
+  qText: { color: colors.text, fontSize: 15, lineHeight: 22 },
   qNumber: { paddingHorizontal: 8, height: 24, borderRadius: 7, backgroundColor: colors.accentSoft, justifyContent: 'center' },
   qNumberText: { color: colors.accent, fontWeight: '700', fontSize: 13 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

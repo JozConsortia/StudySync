@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'rea
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { colors } from './src/theme';
+import { ThemeProvider, useTheme, useThemedStyles } from './src/theme';
 import { api, tokenStore } from './src/api';
 import { toSavedPayload } from './src/saved';
 import { newHistoryId, paperFromHistory, toHistoryPayload, upsertHistory } from './src/history';
@@ -11,6 +11,7 @@ import { createSyncQueue } from './src/sync';
 import { clearLegacyData, readLegacyData } from './src/legacy';
 import { Button } from './src/components/ui';
 import Logo from './src/components/Logo';
+import { stopSpeaking } from './src/speech';
 import AuthScreen from './src/screens/AuthScreen';
 import ScanScreen from './src/screens/ScanScreen';
 import SavedScreen from './src/screens/SavedScreen';
@@ -19,11 +20,24 @@ import HistoryScreen from './src/screens/HistoryScreen';
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" backgroundColor={colors.bg} />
+      <ThemeProvider>
+        <Shell />
+      </ThemeProvider>
+    </SafeAreaProvider>
+  );
+}
+
+function Shell() {
+  const { colors, mode } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <>
+      {/* Light status bar text on the dark theme, dark text on the bright theme. */}
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} backgroundColor={colors.bg} />
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
         <Main />
       </SafeAreaView>
-    </SafeAreaProvider>
+    </>
   );
 }
 
@@ -34,6 +48,8 @@ function mergeById(local, server) {
 }
 
 function Main() {
+  const { colors, mode, toggle } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
   const [tab, setTab] = useState('scan');
@@ -193,6 +209,7 @@ function Main() {
   };
 
   const signOut = async () => {
+    stopSpeaking();
     await tokenStore.set(null);
     setUser(null);
     setPaper(null);
@@ -236,6 +253,9 @@ function Main() {
       <View style={styles.topbar}>
         <Logo />
         <View style={{ flex: 1 }} />
+        <Pressable onPress={toggle} hitSlop={10} accessibilityLabel={mode === 'dark' ? 'Switch to bright mode' : 'Switch to dark mode'}>
+          <Feather name={mode === 'dark' ? 'sun' : 'moon'} size={18} color={colors.muted} />
+        </Pressable>
         <Text style={styles.userName} numberOfLines={1}>
           {user.fullName}
         </Text>
@@ -294,6 +314,8 @@ function Main() {
 }
 
 function TabButton({ icon, label, active, onPress, badge }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const color = active ? colors.text : colors.muted;
   return (
     <Pressable style={styles.tab} onPress={onPress} accessibilityRole="tab" accessibilityState={{ selected: active }}>
@@ -310,7 +332,8 @@ function TabButton({ icon, label, active, onPress, badge }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24, backgroundColor: colors.bg },
   gateTitle: { color: colors.text, fontSize: 18, fontWeight: '700', textAlign: 'center' },
@@ -325,9 +348,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.dangerSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,107,107,0.35)',
+    borderColor: colors.alertBorder,
   },
-  syncErrorText: { flex: 1, color: '#ffb3b3', fontSize: 13 },
+  syncErrorText: { flex: 1, color: colors.alertText, fontSize: 13 },
   topbar: {
     flexDirection: 'row',
     alignItems: 'center',

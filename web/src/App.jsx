@@ -11,6 +11,9 @@ import SavedView from "./components/SavedView.jsx";
 import HistoryView from "./components/HistoryView.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
+import ThemeToggle from "./components/ThemeToggle.jsx";
+import { useTheme } from "./lib/theme.js";
+import { stopSpeaking } from "./lib/speech.js";
 
 // Keeps items created on this screen that the server list doesn't include yet (their save may still be in flight).
 function mergeById(local, server) {
@@ -19,6 +22,7 @@ function mergeById(local, server) {
 }
 
 export default function App() {
+  const [theme, toggleTheme] = useTheme();
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(Boolean(getToken()));
   const [tab, setTab] = useState("scan");
@@ -186,6 +190,7 @@ export default function App() {
 
   const logout = () => {
     if (sync.busy() && !window.confirm("Your latest changes are still being saved. Sign out anyway?")) return;
+    stopSpeaking();
     setToken(null);
     setUser(null);
     setPaper(null);
@@ -200,7 +205,7 @@ export default function App() {
     );
   }
 
-  if (!user) return <AuthScreen onAuth={onAuth} />;
+  if (!user) return <AuthScreen onAuth={onAuth} theme={theme} onToggleTheme={toggleTheme} />;
 
   const dataGate =
     dataStatus === "loading" ? (
@@ -235,6 +240,7 @@ export default function App() {
           </button>
         </nav>
         <div className="account">
+          <ThemeToggle theme={theme} onToggle={toggleTheme} />
           <Avatar user={user} />
           <span className="account-name" title={user.email}>
             {user.fullName}

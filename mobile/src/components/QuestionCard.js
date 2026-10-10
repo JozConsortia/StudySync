@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 import { Button, Card, Chip, ErrorBox } from './ui';
 import SolutionView from './SolutionView';
+import { BotMessage } from './Bot';
+import { ListenButton } from './VoiceButtons';
+import RichText from './RichText';
 
 export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(q.text);
 
@@ -16,7 +21,7 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
   };
 
   return (
-    <Card style={[styles.card, q.status === 'done' && { borderColor: '#1f2a24' }]}>
+    <Card style={[styles.card, q.status === 'done' && { borderColor: colors.doneBorder }]}>
       <View style={styles.head}>
         <View style={styles.qNumber}>
           <Text style={styles.qNumberText}>Q{q.number}</Text>
@@ -52,29 +57,24 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
           </View>
         </View>
       ) : (
-        <Text style={styles.qText}>{q.text}</Text>
+        <RichText text={q.text} style={styles.qText} />
       )}
 
       {q.status === 'idle' && !editing && (
-        <Button title="Solve with AI" icon="zap" variant="primary" size="sm" onPress={onSolve} style={styles.start} />
+        <Button title="Ask StudySync Bot" icon="cpu" variant="primary" size="sm" onPress={onSolve} style={styles.start} />
       )}
 
-      {q.status === 'solving' && (
-        <View style={styles.row}>
-          <ActivityIndicator color={colors.accent} />
-          <Text style={{ color: colors.muted }}>Working out the solution…</Text>
-        </View>
-      )}
+      {q.status === 'solving' && <BotMessage thinking />}
 
       {q.status === 'error' && (
-        <View style={{ gap: 8 }}>
+        <BotMessage>
           <ErrorBox message={q.error} />
           <Button title="Retry" icon="rotate-ccw" size="sm" onPress={onSolve} style={styles.start} />
-        </View>
+        </BotMessage>
       )}
 
       {q.status === 'done' && q.solution && (
-        <>
+        <BotMessage actions={<ListenButton solution={q.solution} question={q.text} id={`q:${q.id}:${q.text.length}`} />}>
           <SolutionView solution={q.solution} />
           <View style={styles.row}>
             <Button
@@ -87,13 +87,14 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
             <Button title="Download" icon="download" size="sm" onPress={onDownload} />
             <Button title="Redo" icon="rotate-ccw" variant="ghost" size="sm" onPress={onSolve} />
           </View>
-        </>
+        </BotMessage>
       )}
     </Card>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   card: { gap: 12 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qNumber: { paddingHorizontal: 8, height: 24, borderRadius: 7, backgroundColor: colors.accentSoft, justifyContent: 'center' },
@@ -105,7 +106,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: '#050505',
+    backgroundColor: colors.inputBg,
     color: colors.text,
     fontSize: 15,
     textAlignVertical: 'top',

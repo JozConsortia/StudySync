@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, FilePlus2, FileText, LoaderCircle, MessageSquareText, Sparkles, Upload } from "lucide-react";
+import { Download, FilePlus2, FileText, LoaderCircle, MessageSquareText, Send, Sparkles, Upload } from "lucide-react";
 import { api } from "../lib/api.js";
 import { downloadPdf } from "../lib/pdf.js";
 import { savedId } from "../lib/saved.js";
+import { sectionContext } from "../lib/context.js";
+import { handleIndentKey, looksLikeCode } from "../lib/editor.js";
+import { summarize } from "../lib/richtext.js";
+import BotAvatar from "./BotAvatar.jsx";
+import { MicButton } from "./VoiceButtons.jsx";
 import QuestionCard from "./QuestionCard.jsx";
 
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff";
@@ -36,6 +41,7 @@ function UploadPanel({ onStart }) {
   const [error, setError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const [typed, setTyped] = useState("");
+  const voiceBase = useRef(""); // text already in the box when the microphone was started
 
   useEffect(() => {
     if (!file) return;
@@ -69,11 +75,13 @@ function UploadPanel({ onStart }) {
 
   const askTyped = (e) => {
     e.preventDefault();
-    const text = typed.trim();
-    if (!text) return;
+    // Keep leading indentation (pasted code); only drop blank lines around the question.
+    const text = typed.replace(/^\s*\n/, "").trimEnd();
+    if (!text.trim()) return;
+    const summary = summarize(text);
     onStart({
       kind: "typed",
-      title: text.length > 70 ? `${text.slice(0, 70).trim()}…` : text,
+      title: summary.length > 70 ? `${summary.slice(0, 70).trim()}…` : summary,
       subject: "",
       fileName: null,
       method: "typed",
@@ -150,25 +158,44 @@ function UploadPanel({ onStart }) {
       {error && <div className="alert">{error}</div>}
 
       <form className="card ask-card" onSubmit={askTyped}>
-        <label className="ask-label" htmlFor="ask">
-          <MessageSquareText size={16} className="accent" /> Or type a single question
-        </label>
+        <div className="ask-intro">
+          <BotAvatar size={44} />
+          <div>
+            <label className="ask-label" htmlFor="ask">
+              Ask StudySync Bot
+            </label>
+            <p className="muted">Type or speak a single question. I&apos;ll explain the answer step by step.</p>
+          </div>
+        </div>
         <textarea
           id="ask"
-          rows={3}
-          placeholder="e.g. A car travels 150 km in 2.5 hours. Calculate its average speed."
+          rows={Math.min(16, Math.max(3, typed.split("\n").length + 1))}
+          placeholder={"e.g. A car travels 150 km in 2.5 hours. Calculate its average speed.\nYou can also paste code, e.g. \"What does this Python code print?\" followed by the code."}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) askTyped(e);
+            else handleIndentKey(e, setTyped);
           }}
+          className={looksLikeCode(typed) ? "code-input" : undefined}
+          spellCheck={!looksLikeCode(typed)}
           maxLength={8000}
         />
         <div className="ask-row">
-          <small className="muted">Ctrl + Enter to send</small>
-          <button className="btn btn-primary btn-sm" disabled={!typed.trim()}>
-            <Sparkles size={15} /> Solve
-          </button>
+          <small className="muted">Ctrl + Enter to send · Tab indents code</small>
+          <div className="actions">
+            <MicButton
+              onStart={() => {
+                voiceBase.current = typed.trimEnd();
+                setError("");
+              }}
+              onText={(text) => setTyped(voiceBase.current ? `${voiceBase.current} ${text}` : text)}
+              onError={setError}
+            />
+            <button className="btn btn-primary btn-sm" disabled={!typed.trim()}>
+              <Send size={15} /> Ask
+            </button>
+          </div>
         </div>
       </form>
 
@@ -209,7 +236,7 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
   const solve = async (q) => {
     update(q.id, { status: "solving", error: "" });
     try {
-      const solution = await api.solve(q, paper.subject);
+      const solution = await api.solve(q, paper.subject, sectionContext(paper.questions, q));
       update(q.id, { status: "done", solution });
     } catch (err) {
       update(q.id, { status: "error", error: err.message });

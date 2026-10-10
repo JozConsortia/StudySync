@@ -1,6 +1,10 @@
 import { useState } from "react";
-import { Bookmark, BookmarkCheck, Download, LoaderCircle, Pencil, RotateCcw, Sparkles } from "lucide-react";
+import { Bookmark, BookmarkCheck, Bot, Download, Pencil, RotateCcw } from "lucide-react";
 import SolutionView from "./SolutionView.jsx";
+import RichText from "./RichText.jsx";
+import BotMessage from "./BotMessage.jsx";
+import { ListenButton } from "./VoiceButtons.jsx";
+import { handleIndentKey, looksLikeCode } from "../lib/editor.js";
 
 export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload }) {
   const [editing, setEditing] = useState(false);
@@ -35,7 +39,15 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
 
       {editing ? (
         <div className="edit-box">
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={Math.min(12, draft.split("\n").length + 2)} />
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => handleIndentKey(e, setDraft)}
+            className={looksLikeCode(draft) ? "code-input" : undefined}
+            rows={Math.min(18, draft.split("\n").length + 2)}
+            spellCheck={!looksLikeCode(draft)}
+          />
+          <small className="muted">Tip: Tab indents a line by 4 spaces, Shift + Tab removes indentation.</small>
           <div className="actions">
             <button className="btn btn-primary btn-sm" onClick={saveEdit}>
               Save question
@@ -46,32 +58,30 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
           </div>
         </div>
       ) : (
-        <p className="q-text">{q.text}</p>
+        <RichText text={q.text} className="q-text" />
       )}
 
       {q.status === "idle" && !editing && (
-        <button className="btn btn-primary btn-sm" onClick={onSolve}>
-          <Sparkles size={15} /> Solve with AI
+        <button className="btn btn-primary btn-sm ask-bot-btn" onClick={onSolve}>
+          <Bot size={16} /> Ask StudySync Bot
         </button>
       )}
 
-      {q.status === "solving" && (
-        <div className="solving muted">
-          <LoaderCircle size={16} className="spin accent" /> Working out the solution…
-        </div>
-      )}
+      {q.status === "solving" && <BotMessage thinking />}
 
       {q.status === "error" && (
-        <div className="alert alert-row">
-          <span>{q.error}</span>
-          <button className="btn btn-sm" onClick={onSolve}>
-            <RotateCcw size={14} /> Retry
-          </button>
-        </div>
+        <BotMessage label="StudySync Bot">
+          <div className="alert alert-row">
+            <span>{q.error}</span>
+            <button className="btn btn-sm" onClick={onSolve}>
+              <RotateCcw size={14} /> Retry
+            </button>
+          </div>
+        </BotMessage>
       )}
 
       {q.status === "done" && q.solution && (
-        <>
+        <BotMessage actions={<ListenButton solution={q.solution} question={q.text} id={`q:${q.id}:${q.text.length}`} />}>
           <SolutionView solution={q.solution} />
           <div className="actions">
             <button className={isSaved ? "btn btn-sm btn-saved" : "btn btn-sm"} onClick={onToggleSave}>
@@ -85,7 +95,7 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
               <RotateCcw size={15} /> Regenerate
             </button>
           </div>
-        </>
+        </BotMessage>
       )}
     </article>
   );

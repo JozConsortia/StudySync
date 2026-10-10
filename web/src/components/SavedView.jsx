@@ -2,6 +2,10 @@ import { useMemo, useState } from "react";
 import { BookmarkX, ChevronDown, Download, ScanText, Search } from "lucide-react";
 import { downloadPdf } from "../lib/pdf.js";
 import SolutionView from "./SolutionView.jsx";
+import RichText from "./RichText.jsx";
+import { summarize } from "../lib/richtext.js";
+import BotMessage from "./BotMessage.jsx";
+import { ListenButton } from "./VoiceButtons.jsx";
 
 export default function SavedView({ saved, onUnsave, onScan }) {
   const [query, setQuery] = useState("");
@@ -57,15 +61,17 @@ export default function SavedView({ saved, onUnsave, onScan }) {
                 <span className="q-number">Q{s.number}</span>
                 <div className="saved-summary">
                   <strong>{s.paperTitle}</strong>
-                  <span className="muted">{s.text}</span>
+                  <span className="muted">{summarize(s.text)}</span>
                 </div>
                 <ChevronDown size={18} className={open ? "chev open" : "chev"} />
               </button>
 
               {open && (
                 <>
-                  <p className="q-text">{s.text}</p>
-                  <SolutionView solution={s.solution} />
+                  <RichText text={s.text} className="q-text" />
+                  <BotMessage actions={<ListenButton solution={s.solution} question={s.text} id={`s:${s.id}`} />}>
+                    <SolutionView solution={s.solution} />
+                  </BotMessage>
                   <div className="actions">
                     <button
                       className="btn btn-sm"

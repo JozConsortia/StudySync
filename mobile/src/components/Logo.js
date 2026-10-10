@@ -1,8 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 
 // Three "lines of text" with a dot — mirrors the web/desktop logo.
 export default function Logo({ large = false }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const s = large ? 40 : 30;
   const bar = (w) => ({ width: w * s, height: s * 0.08, borderRadius: s, backgroundColor: colors.accent });
   return (
@@ -20,8 +22,9 @@ export default function Logo({ large = false }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  mark: { backgroundColor: '#111', justifyContent: 'space-between' },
+  mark: { backgroundColor: colors.logoBg, justifyContent: 'space-between' },
   text: { color: colors.text, fontWeight: '800' },
 });

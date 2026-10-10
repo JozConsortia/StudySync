@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from .. import config
 from ..errors import ApiError
 from ..security import current_user_id
-from ..services.ai import solve_question, split_questions
+from ..services.ai import solve_question, split_questions, transcribe_audio
 from ..services.ocr import extract_text
 
 router = APIRouter(prefix="/api/papers", dependencies=[Depends(current_user_id)])
@@ -67,6 +67,8 @@ class SolveBody(BaseModel):
     text: str = ""
     subject: str | None = None
     marks: float | None = None
+    # Earlier questions from the same section of the paper, for references like "the block" or "your answer to 1.1".
+    context: str | None = None
 
 
 @router.post("/solve")
@@ -77,4 +79,45 @@ def solve(body: SolveBody):
         raise ApiError(400, "Question text is required.")
     if len(text) > 8000:
         raise ApiError(400, "Question is too long.")
-    return solve_question(text, (body.subject or "")[:100], body.marks)
+    return solve_question(text, (body.subject or "")[:100], body.marks, (body.context or "").strip()[:8000])
+
+
+# Formats Gemini can listen to. The web app records WAV; Android records AAC; iOS records WAV.
+AUDIO_TYPES = {
+    "audio/wav": "audio/wav",
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/aac": "audio/aac",
+    "audio/x-aac": "audio/aac",
+    "audio/mpeg": "audio/mp3",
+    "audio/mp3": "audio/mp3",
+    "audio/ogg": "audio/ogg",
+    "audio/flac": "audio/flac",
+    "audio/aiff": "audio/aiff",
+}
+AUDIO_EXT = {".wav": "audio/wav", ".aac": "audio/aac", ".mp3": "audio/mp3", ".ogg": "audio/ogg", ".flac": "audio/flac"}
+MAX_AUDIO_MB = 10
+
+
+@router.post("/transcribe")
+def transcribe(file: UploadFile | None = File(default=None)):
+    """Turns a recorded spoken question into text."""
+    if file is None:
+        raise ApiError(400, "No recording was received.")
+    mime = AUDIO_TYPES.get((file.content_type or "").lower().split(";")[0].strip())
+    if not mime:
+        name = (file.filename or "").lower()
+        mime = next((m for ext, m in AUDIO_EXT.items() if name.endswith(ext)), None)
+    if not mime:
+        raise ApiError(400, "Unsupported recording format.")
+
+    data = file.file.read(MAX_AUDIO_MB * 1024 * 1024 + 1)
+    if len(data) > MAX_AUDIO_MB * 1024 * 1024:
+        raise ApiError(400, "The recording is too long. Keep questions under about two minutes.")
+    if len(data) < 1000:
+        raise ApiError(400, "The recording is empty. Hold the microphone button and speak your question.")
+
+    text = transcribe_audio(data, mime)
+    if not text:
+        raise ApiError(422, "No speech was recognised. Please try again and speak clearly.")
+    return {"text": text}

@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 import { api } from '../api';
 import { sharePdf } from '../pdf';
 import { savedId } from '../saved';
+import { sectionContext } from '../context';
+import { BotAvatar } from '../components/Bot';
+import { MicButton } from '../components/VoiceButtons';
+import { parseRichText, summarize } from '../richtext';
+
+const looksLikeCode = (text) => parseRichText(text).some((p) => p.type === 'code');
 import { Button, Card, Chip, ErrorBox } from '../components/ui';
 import QuestionCard from '../components/QuestionCard';
 
@@ -29,17 +35,22 @@ export default function ScanScreen({ paper, setPaper, updatePaper, startPaper, s
 }
 
 function UploadPanel({ onExtracted }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [fileName, setFileName] = useState(null);
   const [error, setError] = useState('');
   const [elapsed, setElapsed] = useState(0);
   const [typed, setTyped] = useState('');
+  const voiceBase = useRef(''); // text already in the box when recording started
 
   const askTyped = () => {
-    const text = typed.trim();
-    if (!text) return;
+    // Keep leading indentation (pasted code); only drop blank lines around the question.
+    const text = typed.replace(/^\s*\n/, '').trimEnd();
+    if (!text.trim()) return;
+    const summary = summarize(text);
     onExtracted({
       kind: 'typed',
-      title: text.length > 70 ? `${text.slice(0, 70).trim()}…` : text,
+      title: summary.length > 70 ? `${summary.slice(0, 70).trim()}…` : summary,
       subject: '',
       fileName: null,
       method: 'typed',
@@ -140,11 +151,16 @@ function UploadPanel({ onExtracted }) {
 
       <Card style={{ gap: 10 }}>
         <View style={styles.askLabel}>
-          <Feather name="message-square" size={16} color={colors.accent} />
-          <Text style={styles.howTitle}>Or type a single question</Text>
+          <BotAvatar size={40} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.howTitle}>Ask StudySync Bot</Text>
+            <Text style={styles.muted}>Type or speak a question. I'll explain it step by step.</Text>
+          </View>
         </View>
         <TextInput
-          style={styles.askInput}
+          style={[styles.askInput, looksLikeCode(typed) && styles.codeInput]}
+          autoCapitalize={looksLikeCode(typed) ? 'none' : 'sentences'}
+          autoCorrect={!looksLikeCode(typed)}
           multiline
           maxLength={8000}
           placeholder="e.g. A car travels 150 km in 2.5 hours. Calculate its average speed."
@@ -152,15 +168,17 @@ function UploadPanel({ onExtracted }) {
           value={typed}
           onChangeText={setTyped}
         />
-        <Button
-          title="Solve"
-          icon="zap"
-          variant="primary"
-          size="sm"
-          onPress={askTyped}
-          disabled={!typed.trim()}
-          style={{ alignSelf: 'flex-end' }}
-        />
+        <View style={styles.askActions}>
+          <MicButton
+            onStart={() => {
+              voiceBase.current = typed.trimEnd();
+              setError('');
+            }}
+            onText={(text) => setTyped(voiceBase.current ? `${voiceBase.current} ${text}` : text)}
+            onError={setError}
+          />
+          <Button title="Ask" icon="send" variant="primary" size="sm" onPress={askTyped} disabled={!typed.trim()} />
+        </View>
       </Card>
 
       {[
@@ -183,6 +201,7 @@ function UploadPanel({ onExtracted }) {
 }
 
 function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
+  const styles = useThemedStyles(makeStyles);
   const [solvingAll, setSolvingAll] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const savedIds = new Set(saved.map((s) => s.id));
@@ -198,7 +217,7 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
   const solve = async (q) => {
     update(q.id, { status: 'solving', error: '' });
     try {
-      update(q.id, { status: 'done', solution: await api.solve(q, paper.subject) });
+      update(q.id, { status: 'done', solution: await api.solve(q, paper.subject, sectionContext(paper.questions, q)) });
     } catch (err) {
       update(q.id, { status: 'error', error: err.message });
     }
@@ -331,7 +350,8 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   page: { padding: 16, gap: 14, paddingBottom: 40 },
   h1: { color: colors.text, fontSize: 22, fontWeight: '800' },
   h2: { color: colors.text, fontSize: 18, fontWeight: '700', textAlign: 'center' },
@@ -367,14 +387,16 @@ const styles = StyleSheet.create({
   },
   howNText: { color: colors.accent, fontWeight: '700' },
   howTitle: { color: colors.text, fontWeight: '700', marginBottom: 2 },
-  askLabel: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  askLabel: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  askActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 8 },
+  codeInput: { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), fontSize: 13 },
   askInput: {
     minHeight: 80,
     padding: 12,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: '#050505',
+    backgroundColor: colors.inputBg,
     color: colors.text,
     fontSize: 15,
     textAlignVertical: 'top',

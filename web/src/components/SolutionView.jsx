@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Lightbulb, Target } from "lucide-react";
+import RichText from "./RichText.jsx";
 
 export default function SolutionView({ solution }) {
   const [showSteps, setShowSteps] = useState(true);
@@ -10,7 +11,7 @@ export default function SolutionView({ solution }) {
         <div className="section-label">
           <Target size={14} /> Answer
         </div>
-        <p>{solution.answer}</p>
+        <RichText text={solution.answer} className="answer-text" />
       </div>
 
       {solution.steps.length > 0 && (
@@ -26,7 +27,7 @@ export default function SolutionView({ solution }) {
                   <span className="step-n">{i + 1}</span>
                   <div>
                     <strong>{s.title}</strong>
-                    <p>{s.detail}</p>
+                    <RichText text={s.detail} />
                   </div>
                 </li>
               ))}
@@ -38,7 +39,7 @@ export default function SolutionView({ solution }) {
       {solution.explanation && (
         <div className="explanation">
           <div className="section-label">Why it works</div>
-          <p>{solution.explanation}</p>
+          <RichText text={solution.explanation} />
         </div>
       )}
 
@@ -49,7 +50,9 @@ export default function SolutionView({ solution }) {
           </div>
           <ul>
             {solution.tips.map((t, i) => (
-              <li key={i}>{t}</li>
+              <li key={i}>
+                <RichText text={t} />
+              </li>
             ))}
           </ul>
         </div>

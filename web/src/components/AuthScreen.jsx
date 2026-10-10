@@ -2,8 +2,10 @@ import { useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { api } from "../lib/api.js";
 import Logo from "./Logo.jsx";
+import ThemeToggle from "./ThemeToggle.jsx";
+import BotAvatar from "./BotAvatar.jsx";
 
-export default function AuthScreen({ onAuth }) {
+export default function AuthScreen({ onAuth, theme, onToggleTheme }) {
   const [mode, setMode] = useState("login");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -34,6 +36,7 @@ export default function AuthScreen({ onAuth }) {
 
   return (
     <div className="auth-screen">
+      <ThemeToggle theme={theme} onToggle={onToggleTheme} className="auth-theme" />
       <div className="auth-intro">
         <Logo large />
         <h1>Turn any exam paper into worked solutions.</h1>
@@ -41,6 +44,13 @@ export default function AuthScreen({ onAuth }) {
           Upload a PDF or a photo of a past paper. StudySync reads every question with OCR and explains each answer
           step by step, so you understand the method, not just the result.
         </p>
+        <div className="auth-bot">
+          <BotAvatar size={52} />
+          <div className="auth-bot-bubble">
+            Hi, I&apos;m <strong>StudySync Bot</strong>. Snap a paper, type a question or just ask me out loud, and
+            I&apos;ll walk you through the answer. I can read it to you too.
+          </div>
+        </div>
       </div>
 
       <form className="card auth-card" onSubmit={submit}>

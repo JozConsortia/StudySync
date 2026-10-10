@@ -1,6 +1,10 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, FileText, History, MessageSquareText, ScanText, Search, Trash2, ArrowRight } from "lucide-react";
 import SolutionView from "./SolutionView.jsx";
+import RichText from "./RichText.jsx";
+import { summarize } from "../lib/richtext.js";
+import BotMessage from "./BotMessage.jsx";
+import { ListenButton } from "./VoiceButtons.jsx";
 
 function dayLabel(iso) {
   const d = new Date(iso);
@@ -92,7 +96,7 @@ export default function HistoryView({ history, activeId, onOpen, onDelete, onCle
                     <button className="saved-head" onClick={() => setOpenId(open ? null : e.id)} aria-expanded={open}>
                       <span className="history-icon">{typed ? <MessageSquareText size={18} /> : <FileText size={18} />}</span>
                       <div className="saved-summary">
-                        <strong>{typed ? e.questions[0]?.text : e.title}</strong>
+                        <strong>{typed ? summarize(e.questions[0]?.text) : e.title}</strong>
                         <span className="muted">
                           {[
                             typed ? "Typed question" : `${solved.length}/${e.questions.length} solved`,
@@ -117,8 +121,12 @@ export default function HistoryView({ history, activeId, onOpen, onDelete, onCle
                             {q.marks != null && <span className="chip">{q.marks} marks</span>}
                             {!q.solution && <span className="chip">Not solved</span>}
                           </div>
-                          <p className="q-text">{q.text}</p>
-                          {q.solution && <SolutionView solution={q.solution} />}
+                          <RichText text={q.text} className="q-text" />
+                          {q.solution && (
+                            <BotMessage actions={<ListenButton solution={q.solution} question={q.text} id={`h:${e.id}:${q.id}`} />}>
+                              <SolutionView solution={q.solution} />
+                            </BotMessage>
+                          )}
                         </div>
                       ))}
                     </>

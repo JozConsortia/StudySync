@@ -6,6 +6,12 @@
     <meta name="theme-color" content="#000000" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <title>StudySync</title>
+    <script>
+      // Apply the saved theme before the page paints, so bright-mode users never see a dark flash.
+      try {
+        if (localStorage.getItem("studysync.theme") === "light") document.documentElement.dataset.theme = "light";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

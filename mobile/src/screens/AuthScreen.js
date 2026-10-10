@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 import { api } from '../api';
 import { Button, Card, ErrorBox } from '../components/ui';
 import Logo from '../components/Logo';
+import { BotAvatar } from '../components/Bot';
+import { Feather } from '@expo/vector-icons';
 
 export default function AuthScreen({ onAuth }) {
+  const { colors, mode: themeMode, toggle: toggleTheme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [mode, setMode] = useState('login');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -30,11 +34,25 @@ export default function AuthScreen({ onAuth }) {
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <Logo large />
+        <View style={styles.topRow}>
+          <Logo large />
+          <Pressable onPress={toggleTheme} hitSlop={12} accessibilityLabel={themeMode === 'dark' ? 'Switch to bright mode' : 'Switch to dark mode'}>
+            <Feather name={themeMode === 'dark' ? 'sun' : 'moon'} size={20} color={colors.muted} />
+          </Pressable>
+        </View>
         <Text style={styles.headline}>Turn any exam paper into worked solutions.</Text>
         <Text style={styles.sub}>
           Snap a photo or pick a PDF. StudySync reads every question and explains each answer step by step.
         </Text>
+        <View style={styles.botRow}>
+          <BotAvatar size={44} />
+          <View style={styles.botBubble}>
+            <Text style={styles.botText}>
+              Hi, I'm <Text style={{ fontWeight: '700', color: colors.text }}>StudySync Bot</Text>. Ask me by typing or
+              speaking, and I can read the answers to you too.
+            </Text>
+          </View>
+        </View>
 
         <Card style={styles.card}>
           <Text style={styles.title}>{isRegister ? 'Create your account' : 'Welcome back'}</Text>
@@ -81,6 +99,8 @@ export default function AuthScreen({ onAuth }) {
 }
 
 function Field({ label, hint, ...props }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={{ gap: 6 }}>
       <Text style={styles.label}>{label}</Text>
@@ -90,7 +110,12 @@ function Field({ label, hint, ...props }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  botRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginBottom: 6 },
+  botBubble: { flex: 1, padding: 12, borderRadius: 16, borderTopLeftRadius: 4, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  botText: { color: colors.textSoft, fontSize: 14, lineHeight: 20 },
   container: { padding: 20, paddingTop: 40, gap: 14, flexGrow: 1, justifyContent: 'center' },
   headline: { color: colors.text, fontSize: 28, fontWeight: '800', lineHeight: 34, marginTop: 12 },
   sub: { color: colors.muted, fontSize: 15, lineHeight: 22, marginBottom: 8 },
@@ -104,7 +129,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: '#050505',
+    backgroundColor: colors.inputBg,
     color: colors.text,
     fontSize: 15,
   },

@@ -1,9 +1,11 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors, radius } from '../theme';
+import { useTheme, useThemedStyles, radius } from '../theme';
 
 export function Button({ title, icon, onPress, variant = 'default', size = 'md', disabled, loading, style }) {
-  const v = variants[variant];
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const v = makeVariants(colors)[variant];
   return (
     <Pressable
       onPress={onPress}
@@ -28,10 +30,12 @@ export function Button({ title, icon, onPress, variant = 'default', size = 'md',
 }
 
 export function Card({ children, style }) {
+  const styles = useThemedStyles(makeStyles);
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
 export function Chip({ label }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.chip}>
       <Text style={styles.chipText}>{label}</Text>
@@ -40,6 +44,7 @@ export function Chip({ label }) {
 }
 
 export function ErrorBox({ message }) {
+  const styles = useThemedStyles(makeStyles);
   if (!message) return null;
   return (
     <View style={styles.error}>
@@ -48,15 +53,16 @@ export function ErrorBox({ message }) {
   );
 }
 
-const variants = {
+const makeVariants = (colors) => ({
   default: { box: { backgroundColor: colors.surface2, borderColor: colors.borderStrong }, text: { color: colors.text } },
   primary: { box: { backgroundColor: colors.accent, borderColor: colors.accent }, text: { color: '#fff' } },
   ghost: { box: { backgroundColor: 'transparent', borderColor: 'transparent' }, text: { color: colors.muted } },
-  saved: { box: { backgroundColor: colors.successSoft, borderColor: 'rgba(60,207,145,0.4)' }, text: { color: colors.success } },
+  saved: { box: { backgroundColor: colors.successSoft, borderColor: colors.successBorder }, text: { color: colors.success } },
   danger: { box: { backgroundColor: 'transparent', borderColor: 'transparent' }, text: { color: colors.danger } },
-};
+});
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   btn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -91,7 +97,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: colors.dangerSoft,
     borderWidth: 1,
-    borderColor: 'rgba(255,107,107,0.35)',
+    borderColor: colors.alertBorder,
   },
-  errorText: { color: '#ffb3b3', fontSize: 14 },
+  errorText: { color: colors.alertText, fontSize: 14 },
 });

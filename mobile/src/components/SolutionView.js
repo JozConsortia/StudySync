@@ -1,16 +1,19 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
+import RichText from './RichText';
 
 export default function SolutionView({ solution }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [showSteps, setShowSteps] = useState(true);
 
   return (
     <View style={styles.wrap}>
       <View style={[styles.block, styles.answer]}>
         <Text style={[styles.label, { color: colors.success }]}>ANSWER</Text>
-        <Text style={styles.answerText}>{solution.answer}</Text>
+        <RichText text={solution.answer} style={styles.answerText} />
       </View>
 
       {solution.steps.length > 0 && (
@@ -27,7 +30,7 @@ export default function SolutionView({ solution }) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.stepTitle}>{s.title}</Text>
-                  <Text style={styles.body}>{s.detail}</Text>
+                  <RichText text={s.detail} style={styles.body} />
                 </View>
               </View>
             ))}
@@ -37,7 +40,7 @@ export default function SolutionView({ solution }) {
       {!!solution.explanation && (
         <View style={styles.block}>
           <Text style={styles.label}>WHY IT WORKS</Text>
-          <Text style={styles.body}>{solution.explanation}</Text>
+          <RichText text={solution.explanation} style={styles.body} />
         </View>
       )}
 
@@ -45,9 +48,12 @@ export default function SolutionView({ solution }) {
         <View style={styles.block}>
           <Text style={[styles.label, { color: colors.warning }]}>EXAM TIPS</Text>
           {solution.tips.map((t, i) => (
-            <Text key={i} style={styles.body}>
-              •  {t}
-            </Text>
+            <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
+              <Text style={styles.body}>•</Text>
+              <View style={{ flex: 1 }}>
+                <RichText text={t} style={styles.body} />
+              </View>
+            </View>
           ))}
         </View>
       )}
@@ -55,7 +61,8 @@ export default function SolutionView({ solution }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   wrap: { gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
   block: {
     padding: 14,
@@ -65,7 +72,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     gap: 6,
   },
-  answer: { backgroundColor: colors.successSoft, borderColor: 'rgba(60,207,145,0.3)' },
+  answer: { backgroundColor: colors.successSoft, borderColor: colors.successBorder },
   label: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
   answerText: { color: colors.text, fontSize: 15, fontWeight: '700' },
   toggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

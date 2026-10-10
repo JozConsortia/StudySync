@@ -48,7 +48,7 @@ def health():
     return {
         "status": "ok",
         "database": "ok" if db.ping() else "unreachable",
-        "openai": config.OPENAI_CONFIGURED,
+        "ai": config.AI_CONFIGURED,
     }
 
 

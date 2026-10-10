@@ -41,7 +41,7 @@ def _boxes_to_lines(boxes, txts) -> str:
         ys = [p[1] for p in box]
         xs = [p[0] for p in box]
         top, bottom = min(ys), max(ys)
-        items.append({"text": text, "left": min(xs), "cy": (top + bottom) / 2, "h": bottom - top})
+        items.append({"text": text, "left": min(xs), "width": max(xs) - min(xs), "cy": (top + bottom) / 2, "h": bottom - top})
     items.sort(key=lambda it: (it["cy"], it["left"]))
 
     lines: list[list[dict]] = []
@@ -51,7 +51,60 @@ def _boxes_to_lines(boxes, txts) -> str:
             line.append(it)
         else:
             lines.append([it])
-    return "\n".join(" ".join(i["text"] for i in sorted(line, key=lambda i: i["left"])) for line in lines)
+
+    char_w = _median_char_width((it["width"], it["text"]) for it in items)
+    rows = []
+    for line in lines:
+        line.sort(key=lambda i: i["left"])
+        rows.append((line[0]["left"], " ".join(i["text"] for i in line)))
+    return _indent_lines(rows, char_w)
+
+
+# Indentation matters for code, pseudocode and nested lists, but OCR and PDF text extraction only give
+# each line's horizontal position. These helpers turn that position back into leading spaces.
+MAX_INDENT = 24
+
+
+def _median_char_width(samples) -> float:
+    widths = sorted(w / len(t) for w, t in samples if len(t.strip()) >= 3 and w > 0)
+    return widths[len(widths) // 2] if widths else 0.0
+
+
+def _indent_lines(rows: list[tuple[float, str]], char_w: float) -> str:
+    """rows: (left x, text) per line. Returns the lines with leading spaces matching their x offset."""
+    if not rows:
+        return ""
+    page_left = min(x for x, t in rows if t.strip()) if any(t.strip() for _, t in rows) else 0
+    out = []
+    for x, text in rows:
+        if not text.strip():
+            out.append("")
+            continue
+        lead = len(text) - len(text.lstrip(" "))
+        indent = lead + (round((x - page_left) / char_w) if char_w > 0 else 0)
+        out.append(" " * min(max(indent, 0), MAX_INDENT) + text.strip())
+    return "\n".join(out)
+
+
+def _pdf_page_text(page) -> str:
+    """Text of a PDF page with each line's indentation preserved (reading order as PyMuPDF gives it)."""
+    rows, samples = [], []
+    prev_bottom = None
+    for block in page.get_text("dict")["blocks"]:
+        if block.get("type") != 0:  # 0 = text block; skip images
+            continue
+        top, bottom = block["bbox"][1], block["bbox"][3]
+        line_h = (bottom - top) / max(len(block["lines"]), 1)
+        # A blank line only where the page has a visible gap (a new paragraph), not between every block.
+        if prev_bottom is not None and top - prev_bottom > line_h * 0.9:
+            rows.append((0, ""))
+        prev_bottom = bottom
+        for line in block["lines"]:
+            text = "".join(span["text"] for span in line["spans"])
+            for span in line["spans"]:
+                samples.append((span["bbox"][2] - span["bbox"][0], span["text"]))
+            rows.append((line["bbox"][0], text.rstrip()))
+    return _indent_lines(rows, _median_char_width(samples)).strip("\n")
 
 
 def _ocr_image(img: np.ndarray) -> str:
@@ -95,7 +148,7 @@ def extract_text(data: bytes, mimetype: str) -> dict:
         pages: list[str] = []
         scanned = 0
         for page in doc.pages(0, min(doc.page_count, MAX_PDF_PAGES)):
-            text = page.get_text("text").strip()
+            text = _pdf_page_text(page)
             if len("".join(text.split())) < MIN_TEXT_CHARS_PER_PAGE:
                 text = _ocr_image(_pixmap_to_image(page.get_pixmap(dpi=SCAN_DPI, alpha=False)))
                 scanned += 1

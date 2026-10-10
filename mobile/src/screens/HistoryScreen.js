@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { colors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme';
 import { Button, Card, Chip } from '../components/ui';
 import SolutionView from '../components/SolutionView';
+import { BotMessage } from '../components/Bot';
+import { ListenButton } from '../components/VoiceButtons';
+import RichText from '../components/RichText';
+import { summarize } from '../richtext';
 
 function dayLabel(iso) {
   const d = new Date(iso);
@@ -18,6 +22,8 @@ function dayLabel(iso) {
 const timeOf = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export default function HistoryScreen({ history, activeId, onOpen, onDelete, onClear, onScan }) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState(null);
 
@@ -87,14 +93,14 @@ export default function HistoryScreen({ history, activeId, onOpen, onDelete, onC
             const typed = e.kind === 'typed';
             const solved = e.questions.filter((q) => q.solution).length;
             return (
-              <Card key={e.id} style={[{ gap: 12 }, e.id === activeId && { borderColor: 'rgba(91,140,255,0.45)' }]}>
+              <Card key={e.id} style={[{ gap: 12 }, e.id === activeId && { borderColor: colors.accentBorder }]}>
                 <Pressable style={styles.itemHead} onPress={() => setOpenId(open ? null : e.id)}>
                   <View style={styles.icon}>
                     <Feather name={typed ? 'message-square' : 'file-text'} size={18} color={colors.accent} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.itemTitle} numberOfLines={open ? undefined : 1}>
-                      {typed ? e.questions[0]?.text : e.title}
+                      {typed ? summarize(e.questions[0]?.text) : e.title}
                     </Text>
                     <Text style={styles.muted} numberOfLines={1}>
                       {[typed ? 'Typed question' : `${solved}/${e.questions.length} solved`, e.subject, timeOf(e.updatedAt)]
@@ -115,8 +121,12 @@ export default function HistoryScreen({ history, activeId, onOpen, onDelete, onC
                         {q.marks != null && <Chip label={`${q.marks} marks`} />}
                         {!q.solution && <Chip label="Not solved" />}
                       </View>
-                      <Text style={styles.qText}>{q.text}</Text>
-                      {q.solution && <SolutionView solution={q.solution} />}
+                      <RichText text={q.text} style={styles.qText} />
+                      {q.solution && (
+                        <BotMessage actions={<ListenButton solution={q.solution} question={q.text} id={`h:${e.id}:${q.id}`} />}>
+                          <SolutionView solution={q.solution} />
+                        </BotMessage>
+                      )}
                     </View>
                   ))}
 
@@ -139,7 +149,8 @@ export default function HistoryScreen({ history, activeId, onOpen, onDelete, onC
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors) =>
+  StyleSheet.create({
   page: { padding: 16, gap: 14, paddingBottom: 40 },
   h1: { color: colors.text, fontSize: 22, fontWeight: '800' },
   h2: { color: colors.text, fontSize: 18, fontWeight: '700' },
@@ -155,7 +166,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: '#050505',
+    backgroundColor: colors.inputBg,
   },
   searchInput: { flex: 1, color: colors.text, paddingVertical: 11, fontSize: 15 },
   itemHead: { flexDirection: 'row', alignItems: 'center', gap: 12 },

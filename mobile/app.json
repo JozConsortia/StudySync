@@ -32,7 +32,14 @@
           "cameraPermission": "StudySync needs the camera so you can photograph exam papers."
         }
       ],
-      "expo-font"
+      "expo-font",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "StudySync uses the microphone so you can speak your questions."
+        }
+      ],
+      "expo-asset"
     ]
   }
 }
