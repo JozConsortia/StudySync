@@ -17,12 +17,24 @@ class Solution(BaseModel):
     tips: list[str] = Field(default_factory=list, max_length=10)
 
 
+class FollowUp(BaseModel):
+    """A follow-up question the student asked about a solution, and the bot's reply."""
+
+    question: str = Field(min_length=1, max_length=4000)
+    answer: str = Field("", max_length=20000)
+    askedAt: str | None = Field(None, max_length=40)
+
+
+MAX_FOLLOWUPS = 30
+
+
 class HistoryQuestion(BaseModel):
     id: str = Field(min_length=1, max_length=20)
     number: str = Field("", max_length=20)
     text: str = Field(min_length=1, max_length=20000)
     marks: float | None = Field(None, ge=0, le=9999)
     solution: Solution | None = None
+    followups: list[FollowUp] = Field(default_factory=list, max_length=MAX_FOLLOWUPS)
 
 
 class HistorySession(BaseModel):
@@ -44,4 +56,5 @@ class SavedAnswer(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
     marks: float | None = Field(None, ge=0, le=9999)
     solution: Solution
+    followups: list[FollowUp] = Field(default_factory=list, max_length=MAX_FOLLOWUPS)
     savedAt: str | None = Field(None, max_length=40)

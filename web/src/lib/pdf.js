@@ -4,7 +4,7 @@ import { languageLabel, parseRichText, splitComment } from "./richtext.js";
 const MARGIN = 48;
 
 // Renders questions and their solutions into a downloadable PDF.
-// items: [{ number, text, marks, solution: { answer, steps, explanation, tips } }]
+// items: [{ number, text, marks, solution: { answer, steps, explanation, tips }, followups?: [{ question, answer }] }]
 export function downloadPdf({ title, subject, items, fileName }) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
@@ -133,6 +133,13 @@ export function downloadPdf({ title, subject, items, fileName }) {
       write("Exam tips", { size: 11, style: "bold", color: [40, 90, 220], gap: 2 });
       s.tips.forEach((t) => write(`•  ${t}`, { gap: 2, indent: 8 }));
       y += 8;
+    }
+    if (q.followups?.length) {
+      write("Follow-up questions", { size: 11, style: "bold", color: [40, 90, 220], gap: 4 });
+      q.followups.forEach((f) => {
+        write(`You: ${f.question}`, { style: "bold", gap: 2, indent: 8 });
+        writeRich(f.answer, { gap: 8, indent: 22 });
+      });
     }
   });
 

@@ -1,5 +1,6 @@
 // History of every paper scanned and question asked. Stored in the database per user;
 // these helpers convert between the paper shown on screen and a history entry.
+import { toFollowupsPayload } from './followups';
 
 const cut = (s, n) => String(s ?? '').slice(0, n);
 
@@ -15,6 +16,7 @@ function snapshotQuestions(paper) {
     text: q.text,
     marks: q.marks ?? null,
     solution: q.status === 'done' ? q.solution : null,
+    followups: q.status === 'done' ? q.followups || [] : [],
   }));
 }
 
@@ -73,6 +75,7 @@ export function toHistoryPayload(entry) {
       text: cut(q.text, 20000) || '(empty question)',
       marks: typeof q.marks === 'number' && q.marks >= 0 ? Math.min(q.marks, 9999) : null,
       solution: q.solution ? toSolutionPayload(q.solution) : null,
+      followups: q.solution ? toFollowupsPayload(q.followups) : [],
     })),
   };
 }

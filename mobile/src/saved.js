@@ -1,5 +1,6 @@
 // Saved answers are stored in the database per user; savedId identifies a question so it is saved once.
 import { toSolutionPayload } from './history';
+import { toFollowupsPayload } from './followups';
 
 const cut = (s, n) => String(s ?? '').slice(0, n);
 
@@ -17,6 +18,7 @@ export function toSavedPayload(item) {
     text: cut(item.text, 20000) || '(empty question)',
     marks: typeof item.marks === 'number' && item.marks >= 0 ? Math.min(item.marks, 9999) : null,
     solution: toSolutionPayload(item.solution),
+    followups: toFollowupsPayload(item.followups),
     savedAt: item.savedAt,
   };
 }

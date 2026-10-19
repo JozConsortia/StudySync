@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookmarkCheck, History, LoaderCircle, LogOut, RotateCcw, ScanText, X } from "lucide-react";
+import { BookmarkCheck, History, LoaderCircle, LogOut, RotateCcw, ScanText, Trophy, X } from "lucide-react";
 import { api, getToken, setToken } from "./lib/api.js";
 import { toSavedPayload } from "./lib/saved.js";
 import { newHistoryId, paperFromHistory, toHistoryPayload, upsertHistory } from "./lib/history.js";
@@ -9,11 +9,13 @@ import AuthScreen from "./components/AuthScreen.jsx";
 import ScanView from "./components/ScanView.jsx";
 import SavedView from "./components/SavedView.jsx";
 import HistoryView from "./components/HistoryView.jsx";
+import ChallengesView from "./components/ChallengesView.jsx";
 import Logo from "./components/Logo.jsx";
 import Avatar from "./components/Avatar.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import { useTheme } from "./lib/theme.js";
 import { stopSpeaking } from "./lib/speech.js";
+import { useConfirm } from "./components/ConfirmDialog.jsx";
 
 // Keeps items created on this screen that the server list doesn't include yet (their save may still be in flight).
 function mergeById(local, server) {
@@ -23,6 +25,7 @@ function mergeById(local, server) {
 
 export default function App() {
   const [theme, toggleTheme] = useTheme();
+  const confirm = useConfirm();
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(Boolean(getToken()));
   const [tab, setTab] = useState("scan");
@@ -108,6 +111,50 @@ export default function App() {
     else setDataStatus("idle");
   }, [user, loadAccountData]);
 
+  // ---------- sync across devices
+  // History and saved answers live in the database, so whatever is done on the phone, the desktop app
+  // or another browser shows up here: the lists are re-read when the app comes back into view, when
+  // History or Saved is opened, and every 20 seconds while the app is visible.
+  const [syncedAt, setSyncedAt] = useState(null);
+  const refreshing = useRef(false);
+
+  const refreshFromServer = useCallback(async () => {
+    if (!user || refreshing.current || sync.busy() || document.visibilityState === "hidden") return;
+    refreshing.current = true;
+    const changesBefore = sync.changeCount();
+    try {
+      const [serverHistory, serverSaved] = await Promise.all([api.history.list(), api.saved.list()]);
+      // A local change made while fetching wins; the next refresh will include it.
+      if (sync.busy() || sync.changeCount() !== changesBefore) return;
+      historyRef.current = serverHistory;
+      setHistory(serverHistory);
+      setSaved(serverSaved);
+      setSyncedAt(new Date());
+    } catch {
+      /* offline or the server is restarting: try again on the next refresh */
+    } finally {
+      refreshing.current = false;
+    }
+  }, [user, sync]);
+
+  useEffect(() => {
+    if (dataStatus !== "ready") return;
+    setSyncedAt(new Date());
+    const onVisible = () => document.visibilityState === "visible" && refreshFromServer();
+    window.addEventListener("focus", refreshFromServer);
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = setInterval(refreshFromServer, 20000);
+    return () => {
+      window.removeEventListener("focus", refreshFromServer);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(timer);
+    };
+  }, [dataStatus, refreshFromServer]);
+
+  useEffect(() => {
+    if (tab !== "scan" && dataStatus === "ready") refreshFromServer();
+  }, [tab, dataStatus, refreshFromServer]);
+
   // ---------- history
 
   const persistEntry = useCallback(
@@ -188,8 +235,18 @@ export default function App() {
     setUser(user);
   };
 
-  const logout = () => {
-    if (sync.busy() && !window.confirm("Your latest changes are still being saved. Sign out anyway?")) return;
+  const logout = async () => {
+    if (
+      sync.busy() &&
+      !(await confirm({
+        title: "Sign out now?",
+        message: "Your latest changes are still being saved to your account. If you sign out now, they may be lost.",
+        confirmLabel: "Sign out anyway",
+        cancelLabel: "Stay signed in",
+        danger: true,
+      }))
+    )
+      return;
     stopSpeaking();
     setToken(null);
     setUser(null);
@@ -230,6 +287,9 @@ export default function App() {
         <nav className="tabs" aria-label="Main">
           <button className={tab === "scan" ? "tab active" : "tab"} onClick={() => setTab("scan")}>
             <ScanText size={16} /> Scan
+          </button>
+          <button className={tab === "challenges" ? "tab active" : "tab"} onClick={() => setTab("challenges")}>
+            <Trophy size={16} /> Challenges
           </button>
           <button className={tab === "history" ? "tab active" : "tab"} onClick={() => setTab("history")}>
             <History size={16} /> History
@@ -281,10 +341,21 @@ export default function App() {
               onDelete={deleteHistory}
               onClear={clearHistory}
               onScan={() => setTab("scan")}
+              syncedAt={syncedAt}
+              onRefresh={refreshFromServer}
             />
           ))}
         {tab === "saved" &&
-          (dataGate || <SavedView saved={saved} onUnsave={unsaveAnswer} onScan={() => setTab("scan")} />)}
+          (dataGate || (
+            <SavedView
+              saved={saved}
+              onUnsave={unsaveAnswer}
+              onScan={() => setTab("scan")}
+              syncedAt={syncedAt}
+              onRefresh={refreshFromServer}
+            />
+          ))}
+        {tab === "challenges" && <ChallengesView />}
       </main>
     </div>
   );

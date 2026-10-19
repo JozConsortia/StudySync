@@ -318,6 +318,16 @@ textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+/* Text fields show the soft glow above; the generic focus outline would draw a second ring. */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.75;
+}
 textarea {
   resize: vertical;
   line-height: 1.5;
@@ -808,11 +818,16 @@ textarea {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.search input {
+.search input,
+.search input:focus {
   border: 0;
   padding: 11px 0;
   background: transparent;
-  box-shadow: none !important;
+  box-shadow: none;
+  color: var(--text);
+}
+.search:focus-within {
+  color: var(--accent);
 }
 .saved-head {
   display: flex;
@@ -921,6 +936,184 @@ textarea.code-input,
   font-family: "Cascadia Code", Consolas, "SF Mono", Menlo, monospace;
   font-size: 0.88rem;
   tab-size: 4;
+}
+
+/* ---------- Sign in / sign up form ---------- */
+.auth-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.auth-switch button {
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.auth-switch button:hover {
+  color: var(--text);
+}
+.auth-switch button.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 0 0 1px var(--border);
+}
+.input-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-icon > svg {
+  position: absolute;
+  left: 13px;
+  color: var(--muted);
+  pointer-events: none;
+  transition: color 0.15s;
+}
+.input-icon:focus-within > svg {
+  color: var(--accent);
+}
+.input-icon input {
+  padding-left: 40px;
+  height: 46px;
+}
+.input-icon input[type="password"],
+.input-icon input[autocomplete$="password"] {
+  padding-right: 44px;
+}
+.input-action {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.input-action:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.hint.ok {
+  color: var(--success);
+}
+.auth-card .btn-block {
+  height: 46px;
+  margin-top: 4px;
+}
+
+/* ---------- Confirm dialog ---------- */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(3px);
+  animation: fade-in 0.15s ease-out;
+}
+.dialog {
+  width: min(440px, 100%);
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px 16px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  animation: pop-in 0.18s ease-out;
+}
+.dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.dialog-icon.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.dialog-body h2 {
+  font-size: 1.08rem;
+  margin: 2px 0 6px;
+}
+.dialog-body p {
+  font-size: 0.92rem;
+}
+.dialog-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+.btn-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.btn-danger:hover:not(:disabled) {
+  filter: brightness(1.08);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+/* ---------- Sync status ---------- */
+.sync-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--success);
+}
+.sync-refresh {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.sync-refresh:hover {
+  color: var(--text);
+  background: var(--surface-2);
 }
 
 /* ---------- StudySync Bot ---------- */
@@ -1215,5 +1408,652 @@ textarea.code-input,
   }
   .dropzone {
     padding: 40px 16px;
+  }
+}
+
+/* ---------- Follow-up questions ---------- */
+.followups {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border-strong);
+}
+.followups-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.followup-thread,
+.followup-turn {
+  display: grid;
+  gap: 10px;
+}
+.user-row {
+  display: flex;
+  justify-content: flex-end;
+}
+.user-bubble {
+  max-width: min(80%, 560px);
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.followup-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.suggestion svg {
+  color: var(--accent);
+}
+.suggestion:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.followup-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--input-bg);
+}
+.followup-composer:focus-within {
+  border-color: var(--accent);
+}
+.followup-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 24px;
+  max-height: 160px;
+  margin: 7px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  resize: none;
+  field-sizing: content;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+.followup-composer textarea:focus {
+  box-shadow: none;
+}
+.followup-composer .mic-btn {
+  flex-shrink: 0;
+}
+.send-btn {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.send-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.muted.small {
+  font-size: 0.85rem;
+}
+.history-question .followup-thread,
+.saved .followup-thread {
+  padding-top: 4px;
+}
+
+@media (max-width: 480px) {
+  .tab {
+    gap: 5px;
+    padding: 8px 6px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Edge adds its own "show password" eye; the app has one already. */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
+/* ---------- Forgot password ---------- */
+.forgot-link {
+  justify-self: end;
+  font-size: 0.85rem;
+}
+.reset {
+  display: grid;
+  gap: 16px;
+}
+.reset-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.reset-head h2 {
+  margin: 0;
+}
+.reset-head p {
+  margin: 2px 0 0;
+}
+.reset-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: var(--success-soft);
+  border: 1px solid var(--success-border);
+  font-size: 0.9rem;
+}
+.notice svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--success);
+}
+.code-field {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+}
+.reset-links {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.reset-links .link:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+.reset-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: center;
+  font-size: 0.9rem;
+}
+
+/* ---------- Daily challenges ---------- */
+.challenges {
+  display: grid;
+  gap: 18px;
+}
+.challenge-prep {
+  gap: 14px;
+}
+.challenge-hero {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  gap: 20px;
+  padding: 26px;
+  border-radius: 24px;
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #5b7cfa 55%, #22c3e6);
+}
+.challenge-hero::after {
+  content: "";
+  position: absolute;
+  top: -110px;
+  right: -70px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  border: 30px solid rgba(255, 255, 255, 0.07);
+  pointer-events: none;
+}
+.challenge-hero-text {
+  display: grid;
+  gap: 14px;
+}
+.challenge-hero .kicker {
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.88;
+}
+.challenge-hero h1 {
+  margin: 0;
+  font-size: 1.9rem;
+  letter-spacing: -0.02em;
+}
+.hero-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.hero-stat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(10, 8, 40, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.hero-stat .emoji {
+  font-size: 1.5rem;
+}
+.hero-stat strong {
+  display: block;
+  font-size: 1.1rem;
+}
+.hero-stat small,
+.xp small {
+  opacity: 0.88;
+  font-weight: 600;
+}
+.xp {
+  display: grid;
+  gap: 6px;
+}
+.xp-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.xp-track {
+  height: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+}
+.xp-fill {
+  height: 100%;
+  border-radius: 8px;
+  background: #fff;
+  transition: width 0.6s ease;
+}
+.challenge-dots {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+.challenge-dot {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.challenge-dot:hover {
+  transform: translateY(-2px);
+}
+.challenge-dot.current {
+  border-color: #fff;
+  transform: scale(1.12);
+}
+.challenge-dot.correct {
+  background: var(--success);
+  border-color: var(--success);
+}
+.challenge-dot.partly {
+  background: var(--warning);
+  border-color: var(--warning);
+}
+.challenge-dot.incorrect {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.challenge-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 18px;
+  align-items: start;
+}
+.challenge-card,
+.challenge-summary {
+  display: grid;
+  gap: 16px;
+}
+.challenge-card h2 {
+  margin: 0;
+  font-size: 1.45rem;
+}
+.challenge-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.challenge-meta .chip {
+  gap: 5px;
+}
+.challenge-meta .xp-chip {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+  font-weight: 700;
+}
+.challenge-question {
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.options {
+  display: grid;
+  gap: 10px;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+.option:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+.option:active:not(:disabled) {
+  transform: scale(0.99);
+}
+.option:disabled {
+  cursor: default;
+}
+.option .letter {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-strong);
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+}
+.option.picked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.option.picked .letter {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.option.right {
+  border-color: var(--success);
+  background: var(--success-soft);
+}
+.option.right .letter {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+.option.wrong {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+.option.wrong .letter {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.challenge-composer {
+  align-items: flex-end;
+}
+.challenge-composer textarea {
+  min-height: 96px;
+}
+.your-answer {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.your-answer p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.challenge-result {
+  display: grid;
+  gap: 12px;
+}
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1.5px solid var(--border);
+  background: var(--surface-2);
+  animation: pop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.result-head strong {
+  display: block;
+  font-size: 1.15rem;
+}
+.result-head .score-bubble {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  padding-top: 15px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 900;
+}
+.score-bubble small {
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+.result-head.correct {
+  border-color: var(--success);
+}
+.result-head.correct strong {
+  color: var(--success);
+}
+.result-head.correct .score-bubble {
+  background: var(--success);
+}
+.result-head.partly {
+  border-color: var(--warning);
+}
+.result-head.partly strong {
+  color: var(--warning);
+}
+.result-head.partly .score-bubble {
+  background: var(--warning);
+}
+.result-head.incorrect {
+  border-color: var(--danger);
+}
+.result-head.incorrect strong {
+  color: var(--danger);
+}
+.result-head.incorrect .score-bubble {
+  background: var(--danger);
+}
+.challenge-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.challenge-summary {
+  justify-items: center;
+  text-align: center;
+}
+.challenge-summary h2 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+.challenge-summary p {
+  margin: 0;
+}
+.stars {
+  display: flex;
+  gap: 8px;
+  font-size: 2.6rem;
+  line-height: 1;
+}
+.stars span {
+  color: var(--border-strong);
+  animation: pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.stars span.on {
+  color: var(--warning);
+}
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  justify-self: stretch;
+}
+.summary-stats div {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+.summary-stats strong {
+  font-size: 1.2rem;
+}
+.summary-stats small {
+  color: var(--muted);
+}
+.week-card {
+  display: grid;
+  gap: 14px;
+}
+.week-head {
+  display: grid;
+  gap: 2px;
+}
+.week {
+  display: flex;
+  justify-content: space-between;
+  height: 150px;
+}
+.week-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.week-col.today {
+  color: var(--accent);
+  font-weight: 700;
+}
+.week-stars {
+  height: 14px;
+  color: var(--warning);
+  font-weight: 800;
+}
+.week-track {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  width: 16px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+.week-fill {
+  width: 100%;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #8b5cf6, #22c3e6);
+}
+.week-fill.partial {
+  background: var(--border-strong);
+}
+@keyframes pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@media (max-width: 820px) {
+  .challenge-layout {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 520px) {
+  .challenge-hero {
+    padding: 20px;
+  }
+  .challenge-hero h1 {
+    font-size: 1.5rem;
+  }
+  .hero-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .challenge-dots {
+    gap: 8px;
   }
 }

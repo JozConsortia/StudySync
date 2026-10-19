@@ -2,33 +2,39 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from '../theme';
+import { Gradient } from './ui';
 import RichText from './RichText';
 
 export default function SolutionView({ solution }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [showSteps, setShowSteps] = useState(true);
+  const steps = solution.steps;
 
   return (
     <View style={styles.wrap}>
       <View style={[styles.block, styles.answer]}>
-        <Text style={[styles.label, { color: colors.success }]}>ANSWER</Text>
+        <Label icon="check-circle" color={colors.success} text="ANSWER" />
         <RichText text={solution.answer} style={styles.answerText} />
       </View>
 
-      {solution.steps.length > 0 && (
+      {steps.length > 0 && (
         <View style={styles.block}>
           <Pressable style={styles.toggle} onPress={() => setShowSteps((v) => !v)}>
-            <Text style={styles.label}>STEP-BY-STEP ({solution.steps.length})</Text>
+            <Label icon="list" color={colors.accent} text={`STEP-BY-STEP · ${steps.length}`} />
             <Feather name={showSteps ? 'chevron-up' : 'chevron-down'} size={16} color={colors.muted} />
           </Pressable>
           {showSteps &&
-            solution.steps.map((s, i) => (
+            steps.map((s, i) => (
               <View key={i} style={styles.step}>
-                <View style={styles.stepN}>
-                  <Text style={styles.stepNText}>{i + 1}</Text>
+                {/* the timeline: a numbered node with a line down to the next step */}
+                <View style={styles.rail}>
+                  <Gradient style={styles.stepN}>
+                    <Text style={styles.stepNText}>{i + 1}</Text>
+                  </Gradient>
+                  {i < steps.length - 1 && <View style={styles.line} />}
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={styles.stepBody}>
                   <Text style={styles.stepTitle}>{s.title}</Text>
                   <RichText text={s.detail} style={styles.body} />
                 </View>
@@ -38,18 +44,18 @@ export default function SolutionView({ solution }) {
       )}
 
       {!!solution.explanation && (
-        <View style={styles.block}>
-          <Text style={styles.label}>WHY IT WORKS</Text>
+        <View style={[styles.block, styles.why]}>
+          <Label icon="compass" color={colors.cyan} text="WHY IT WORKS" />
           <RichText text={solution.explanation} style={styles.body} />
         </View>
       )}
 
       {solution.tips?.length > 0 && (
-        <View style={styles.block}>
-          <Text style={[styles.label, { color: colors.warning }]}>EXAM TIPS</Text>
+        <View style={[styles.block, styles.tips]}>
+          <Label icon="star" color={colors.warning} text="EXAM TIPS" />
           {solution.tips.map((t, i) => (
-            <View key={i} style={{ flexDirection: 'row', gap: 6 }}>
-              <Text style={styles.body}>•</Text>
+            <View key={i} style={{ flexDirection: 'row', gap: 8 }}>
+              <Feather name="arrow-right" size={13} color={colors.warning} style={{ marginTop: 4 }} />
               <View style={{ flex: 1 }}>
                 <RichText text={t} style={styles.body} />
               </View>
@@ -61,33 +67,40 @@ export default function SolutionView({ solution }) {
   );
 }
 
+function Label({ icon, color, text }) {
+  const styles = useThemedStyles(makeStyles);
+  return (
+    <View style={styles.labelRow}>
+      <Feather name={icon} size={13} color={color} />
+      <Text style={[styles.label, { color }]}>{text}</Text>
+    </View>
+  );
+}
+
 const makeStyles = (colors) =>
   StyleSheet.create({
-  wrap: { gap: 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border },
+  wrap: { gap: 10, paddingTop: 4 },
   block: {
     padding: 14,
-    borderRadius: 10,
-    backgroundColor: colors.surface2,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    gap: 6,
+    gap: 8,
   },
   answer: { backgroundColor: colors.successSoft, borderColor: colors.successBorder },
-  label: { color: colors.muted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8 },
-  answerText: { color: colors.text, fontSize: 15, fontWeight: '700' },
+  why: { backgroundColor: colors.cyanSoft, borderColor: 'transparent' },
+  tips: { backgroundColor: colors.warningSoft, borderColor: 'transparent' },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  label: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  answerText: { color: colors.text, fontSize: 16, fontWeight: '700', lineHeight: 23 },
   toggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  step: { flexDirection: 'row', gap: 10, marginTop: 6 },
-  stepN: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface3,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-  },
-  stepNText: { color: colors.accent, fontSize: 12, fontWeight: '700' },
-  stepTitle: { color: colors.text, fontWeight: '700', marginBottom: 2 },
+  step: { flexDirection: 'row', gap: 12 },
+  rail: { alignItems: 'center', width: 26 },
+  stepN: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  stepNText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  line: { flex: 1, width: 2, marginVertical: 4, borderRadius: 1, backgroundColor: colors.borderStrong },
+  stepBody: { flex: 1, paddingTop: 3, paddingBottom: 14 },
+  stepTitle: { color: colors.text, fontWeight: '700', marginBottom: 3 },
   body: { color: colors.textSoft, fontSize: 14, lineHeight: 21 },
 });

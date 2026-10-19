@@ -101,8 +101,8 @@ def transcribe_audio(data: bytes, mime_type: str) -> str:
     if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
         text = text[1:-1].strip()
     # Filler words the model sometimes keeps ("And uh explain..." -> "And explain...").
-    text = re.sub(r"\b(?:um+|uh+|erm+|hmm+)\b[,.…!]*\s*", "", text, flags=re.I)
-    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = re.sub(r",?\s*\b(?:um+|uh+|erm+|hmm+)\b[,.…!]*", " ", text, flags=re.I)  # "And, uh, explain" -> "And explain"
+    text = re.sub(r"\s+([,.?!])", r"\1", re.sub(r"\s{2,}", " ", text)).strip()
     text = text[:1].upper() + text[1:]
     return codefmt.unescape_newlines(text)
 
@@ -202,14 +202,27 @@ Formatting:
 Programming questions (writing, completing, fixing or explaining code):
 - answer: the complete, working solution as ONE code block, not fragments. Use the language the
   question uses (Python if none is given) and only its standard library unless the question allows
-  otherwise. Add comments in the code that explain what each part does and why, written for a student.
+  otherwise. It must include a short example of using the code (e.g. calling the function and printing
+  the result) so the student can run it as it is.
 - steps: explain how the solution is built, in order. Short code excerpts in fenced blocks are welcome.
 - explanation: the idea behind the solution, then "Example:" with a sample input and, in a code block,
   the exact output the code produces for it.
 - Before answering, trace the code line by line with that sample input to make sure it runs without
   errors and gives the right result. Fix anything that would fail.
 - If the question asks what some code outputs or does, trace it step by step and give the exact output
-  in a code block."""
+  in a code block.
+
+Write all code for a BEGINNER who has just started programming:
+- Use only the basics: variables, if / elif / else, for and while loops, functions, lists, strings,
+  input() and print(). Build things step by step with a loop instead of using shortcuts such as list
+  comprehensions, lambda, one-line if/else (x if c else y), map(), filter(), [::-1] slicing or chained
+  method calls - unless the question asks for that feature by name.
+- Give variables and functions clear, full names that say what they hold (total_marks, not tm or x).
+- Do one small thing per line and keep lines short (under 80 characters).
+- Put a comment on the line ABOVE every step (never below it), in plain everyday English, saying what
+  the step does and why. Keep each comment line under 80 characters.
+  If a line uses something a beginner may not know (e.g. % or .lower()), explain it in the comment.
+- In the steps, walk through the code in the same order it runs, using the example values."""
 
 SOLVE_SCHEMA = {
     "type": "object",
@@ -230,15 +243,42 @@ SOLVE_SCHEMA = {
 }
 
 
-def _code_problems(answer: str) -> list[str]:
-    """Problems with the code in an (already formatted) answer that need the AI to try again."""
+# A question that asks the student to produce code ("Write a Python function...", "Using a loop, create...").
+# "What does this code print?" is not one: its answer is the output.
+CODE_TOPIC_RE = re.compile(r"\b(python|java|javascript|c\+\+|c#|pseudocode|program|function|method|algorithm|comprehension|loop|code)\b", re.I)
+CODE_REQUEST_RE = re.compile(r"\b(write|create|implement|complete|rewrite|fix|modify|develop|using|use|declare|define a function)\b", re.I)
+
+
+def _asks_for_code(question: str) -> bool:
+    return bool(CODE_TOPIC_RE.search(question) and CODE_REQUEST_RE.search(question))
+
+
+def _code_problems(answer: str, question: str = "") -> list[str]:
+    """Problems with the code in an (already formatted) answer that need the AI to try again:
+    missing code, syntax errors, and shortcuts a beginner would struggle to read (unless asked for)."""
+    problems = []
+    if _asks_for_code(question) and not codefmt.code_blocks(answer):
+        problems.append(
+            "the question asks for code, so the answer must be the complete working code in one fenced code "
+            "block (with an example that prints the result), not just the result"
+        )
     error = codefmt.python_syntax_error(answer)
-    return [f"the Python code has a syntax error: {error}"] if error else []
+    if error:
+        problems.append(f"the Python code has a syntax error: {error}")
+    hard = codefmt.beginner_unfriendly_python(answer, question)
+    if hard:
+        problems.append(
+            f"the code uses {', '.join(hard)}, which a beginner finds hard to read; rewrite it step by step "
+            "with simple variables, loops and if statements, short lines and a plain-English comment above "
+            "every step"
+        )
+    return problems
 
 
-COMMENT_PROMPT = """You add explanatory comments to code for students.
-Return exactly the code you are given, with comments added that explain what each part does and why.
-Put a comment above each function, loop and decision, and beside lines that are not obvious.
+COMMENT_PROMPT = """You add comments to code so that a beginner programmer can understand it.
+Return exactly the code you are given, with comments added in plain everyday English.
+Put a comment on the line ABOVE every step (each function, loop, decision and important line), never
+below it, saying what it does and why. Keep each comment line under 80 characters. If a line uses something a beginner may not know (e.g. %, //, .lower(), range()), explain it.
 Do not change, reorder, rename or reformat any code; only add comments. Keep the indentation."""
 
 COMMENT_SCHEMA = {"type": "object", "properties": {"code": {"type": "string"}}, "required": ["code"]}
@@ -288,9 +328,10 @@ def solve_question(text: str, subject: str = "", marks=None, context: str = "") 
     data = _generate_json(SOLVE_PROMPT, prompt, SOLVE_SCHEMA)
 
     # Code in the answer is formatted by the server (fenced, one statement per line, 4-space indentation),
-    # Python is compiled (never run) and, if it would not run, the AI gets one more attempt with the error.
+    # Python is compiled (never run) and checked for beginner-unfriendly shortcuts. If there is a problem,
+    # the AI gets one more attempt with the exact problems.
     answer = codefmt.format_code(str(data.get("answer") or ""))
-    problems = _code_problems(answer)
+    problems = _code_problems(answer, text)
     if problems:
         config.log.info("Answer code needs fixing: %s", "; ".join(problems))
         retry = (
@@ -300,7 +341,11 @@ def solve_question(text: str, subject: str = "", marks=None, context: str = "") 
         )
         fixed = _generate_json(SOLVE_PROMPT, retry, SOLVE_SCHEMA)
         fixed_answer = codefmt.format_code(str(fixed.get("answer") or ""))
-        if not _code_problems(fixed_answer):
+        fixed_problems = _code_problems(fixed_answer, text)
+        # Use the rewrite if it compiles and is simpler than the first attempt.
+        if not codefmt.python_syntax_error(fixed_answer) and len(fixed_problems) <= len(problems) and (
+            fixed_problems != problems or codefmt.python_syntax_error(answer)
+        ):
             data, answer = fixed, fixed_answer
     # Programs without comments get them added (code unchanged; checked before it is accepted).
     answer = _add_missing_comments(answer)
@@ -320,3 +365,53 @@ def solve_question(text: str, subject: str = "", marks=None, context: str = "") 
         "explanation": fmt(str(data.get("explanation") or "")),
         "tips": [str(t) for t in tips],
     }
+
+
+FOLLOWUP_PROMPT = """You are StudySync, a patient and accurate tutor. A student has read your worked solution to an
+exam question and is asking a follow-up question about it. You are given the original question, your
+solution, and the conversation so far.
+
+Answer the student's latest message directly and helpfully:
+- Stay on this question and its topic. If they ask for more practice, give one similar question with a
+  fully worked answer. If they ask "why" or say they are confused, explain the idea more simply, using a
+  small example or analogy.
+- If they point out a mistake in the solution, check carefully. Admit and correct real mistakes; politely
+  explain why the solution is right if it is.
+- If the message has nothing to do with studying this question, gently steer back to it.
+- Be concise: a few short paragraphs or a short numbered list. Use plain text; write maths inline in
+  readable form (e.g. x^2 + 3x - 4 = 0, sqrt(2), 3/4).
+- Put any code in a fenced block that names the language, written for a beginner with a plain-English
+  comment above every step and 4-space indentation."""
+
+FOLLOWUP_SCHEMA = {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]}
+
+
+def _solution_text(solution: dict) -> str:
+    lines = [f"Answer: {solution.get('answer', '')}"]
+    for i, step in enumerate(solution.get("steps") or []):
+        lines.append(f"Step {i + 1} - {step.get('title', '')}: {step.get('detail', '')}")
+    if solution.get("explanation"):
+        lines.append(f"Why it works: {solution['explanation']}")
+    for tip in solution.get("tips") or []:
+        lines.append(f"Tip: {tip}")
+    return "\n".join(lines)
+
+
+def answer_followup(question: str, solution: dict | None, history: list[dict], message: str, subject: str = "") -> str:
+    """Answers a follow-up question about a solved question, in the context of the conversation so far."""
+    parts = []
+    if subject:
+        parts.append(f"Subject: {subject}")
+    parts.append(f"Original question:\n{question}")
+    if solution:
+        parts.append(f"Your worked solution:\n{_solution_text(solution)}")
+    # Only the most recent turns; older ones rarely matter and would make the request slower.
+    for turn in history[-8:]:
+        parts.append(f"Student: {turn.get('question', '')}\nStudySync: {turn.get('answer', '')}")
+    parts.append(f"Student's new message:\n{message}")
+
+    data = _generate_json(FOLLOWUP_PROMPT, "\n\n".join(parts)[:60000], FOLLOWUP_SCHEMA, temperature=0.3)
+    answer = codefmt.format_code(str(data.get("answer") or "").strip())
+    if not answer:
+        raise ApiError(502, "The AI could not answer that. Try rewording your question.")
+    return _add_missing_comments(answer)

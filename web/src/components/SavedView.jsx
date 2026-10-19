@@ -2,12 +2,14 @@ import { useMemo, useState } from "react";
 import { BookmarkX, ChevronDown, Download, ScanText, Search } from "lucide-react";
 import { downloadPdf } from "../lib/pdf.js";
 import SolutionView from "./SolutionView.jsx";
+import SyncStatus from "./SyncStatus.jsx";
 import RichText from "./RichText.jsx";
 import { summarize } from "../lib/richtext.js";
 import BotMessage from "./BotMessage.jsx";
 import { ListenButton } from "./VoiceButtons.jsx";
+import { FollowUpThread } from "./FollowUps.jsx";
 
-export default function SavedView({ saved, onUnsave, onScan }) {
+export default function SavedView({ saved, onUnsave, onScan, syncedAt, onRefresh }) {
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState(null);
 
@@ -36,6 +38,7 @@ export default function SavedView({ saved, onUnsave, onScan }) {
         <div>
           <h1>Saved answers</h1>
           <p className="muted">{saved.length} saved to your account</p>
+          <SyncStatus syncedAt={syncedAt} onRefresh={onRefresh} />
         </div>
         <button
           className="btn"
@@ -72,6 +75,7 @@ export default function SavedView({ saved, onUnsave, onScan }) {
                   <BotMessage actions={<ListenButton solution={s.solution} question={s.text} id={`s:${s.id}`} />}>
                     <SolutionView solution={s.solution} />
                   </BotMessage>
+                  <FollowUpThread followups={s.followups} />
                   <div className="actions">
                     <button
                       className="btn btn-sm"

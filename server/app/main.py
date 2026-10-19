@@ -1,4 +1,6 @@
 import logging
+import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -8,11 +10,22 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import config, db
 from .errors import ApiError
-from .routes import auth, history, papers, saved
+from .routes import auth, challenges, history, papers, saved
+from .services import ocr
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(name)s: %(message)s")
 
-app = FastAPI(title="StudySync API", version="1.0.0")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    db.ensure_schema()
+    # Load the RapidOCR models in the background so the first upload does not wait for them.
+    threading.Thread(target=ocr.warm_up, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="StudySync API", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -49,6 +62,8 @@ def health():
         "status": "ok",
         "database": "ok" if db.ping() else "unreachable",
         "ai": config.AI_CONFIGURED,
+        "ocr": {"engine": "RapidOCR", "mode": config.OCR_MODE},
+        "email": config.MAIL_CONFIGURED,
     }
 
 
@@ -56,3 +71,4 @@ app.include_router(auth.router)
 app.include_router(papers.router)
 app.include_router(history.router)
 app.include_router(saved.router)
+app.include_router(challenges.router)

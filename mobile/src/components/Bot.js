@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from '../theme';
+import { Gradient } from './ui';
 
 /** StudySync Bot's face. While it is "thinking" the eyes blink quickly and the antenna pulses. */
 export function BotAvatar({ size = 36, thinking = false }) {
@@ -50,10 +52,10 @@ export function BotAvatar({ size = 36, thinking = false }) {
         }}
       />
       {/* ears */}
-      <View style={{ position: 'absolute', left: 5 * u, top: 28 * u, width: 6 * u, height: 14 * u, borderRadius: 3 * u, backgroundColor: colors.accent }} />
-      <View style={{ position: 'absolute', left: 53 * u, top: 28 * u, width: 6 * u, height: 14 * u, borderRadius: 3 * u, backgroundColor: colors.accent }} />
+      <View style={{ position: 'absolute', left: 5 * u, top: 28 * u, width: 6 * u, height: 14 * u, borderRadius: 3 * u, backgroundColor: colors.violet }} />
+      <View style={{ position: 'absolute', left: 53 * u, top: 28 * u, width: 6 * u, height: 14 * u, borderRadius: 3 * u, backgroundColor: colors.cyan }} />
       {/* head and face screen */}
-      <View style={{ position: 'absolute', left: 10 * u, top: 15 * u, width: 44 * u, height: 40 * u, borderRadius: 12 * u, backgroundColor: colors.accent }}>
+      <Gradient style={{ position: 'absolute', left: 10 * u, top: 15 * u, width: 44 * u, height: 40 * u, borderRadius: 12 * u }}>
         <View style={{ position: 'absolute', left: 6 * u, top: 7 * u, width: 32 * u, height: 24 * u, borderRadius: 8 * u, backgroundColor: '#0b1020', alignItems: 'center' }}>
           <Animated.View style={{ flexDirection: 'row', gap: 7 * u, marginTop: 6.4 * u, transform: [{ scaleY: blink }] }}>
             <View style={eye} />
@@ -61,20 +63,24 @@ export function BotAvatar({ size = 36, thinking = false }) {
           </Animated.View>
           <View style={{ marginTop: 3 * u, width: 12 * u, height: 4 * u, borderBottomLeftRadius: 6 * u, borderBottomRightRadius: 6 * u, borderWidth: 2.4 * u, borderTopWidth: 0, borderColor: '#8fe3ff' }} />
         </View>
-      </View>
+      </Gradient>
     </View>
   );
 }
 
 /** A chat message from StudySync Bot: avatar on the left, answer bubble on the right. */
 export function BotMessage({ thinking = false, label = 'StudySync Bot', actions = null, children }) {
+  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.row}>
       <BotAvatar thinking={thinking} />
       <View style={styles.bubble}>
         <View style={styles.nameRow}>
-          <Text style={styles.name}>{label}</Text>
+          <View style={styles.nameTag}>
+            <Feather name="zap" size={11} color={colors.accent} />
+            <Text style={styles.name}>{label}</Text>
+          </View>
           {actions}
         </View>
         {thinking ? <TypingIndicator /> : children}
@@ -125,12 +131,13 @@ const makeStyles = (colors) =>
       padding: 12,
       borderWidth: 1,
       borderColor: colors.border,
-      borderRadius: 16,
+      borderRadius: 18,
       borderTopLeftRadius: 4,
       backgroundColor: colors.surface2,
     },
     nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-    name: { color: colors.accent, fontWeight: '700', fontSize: 13 },
+    nameTag: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    name: { color: colors.accent, fontWeight: '800', fontSize: 13 },
     typing: { flexDirection: 'row', alignItems: 'center', gap: 10 },
     dots: { flexDirection: 'row', gap: 4 },
     dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.accent },

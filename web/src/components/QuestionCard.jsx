@@ -4,9 +4,10 @@ import SolutionView from "./SolutionView.jsx";
 import RichText from "./RichText.jsx";
 import BotMessage from "./BotMessage.jsx";
 import { ListenButton } from "./VoiceButtons.jsx";
+import FollowUps from "./FollowUps.jsx";
 import { handleIndentKey, looksLikeCode } from "../lib/editor.js";
 
-export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload }) {
+export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload, onFollowUp }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(q.text);
 
@@ -91,11 +92,19 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
             <button className="btn btn-sm" onClick={onDownload}>
               <Download size={15} /> Download
             </button>
-            <button className="btn btn-ghost btn-sm" onClick={onSolve}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={onSolve}
+              title={q.followups?.length ? "Solve again (your follow-up questions will be cleared)" : "Solve again"}
+            >
               <RotateCcw size={15} /> Regenerate
             </button>
           </div>
         </BotMessage>
+      )}
+
+      {q.status === "done" && q.solution && (
+        <FollowUps followups={q.followups} pending={q.followupPending} failed={q.followupFailed} onAsk={onFollowUp} />
       )}
     </article>
   );

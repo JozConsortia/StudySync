@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, FileText, History, MessageSquareText, ScanText, Search, Trash2, ArrowRight } from "lucide-react";
 import SolutionView from "./SolutionView.jsx";
+import SyncStatus from "./SyncStatus.jsx";
+import { useConfirm } from "./ConfirmDialog.jsx";
 import RichText from "./RichText.jsx";
 import { summarize } from "../lib/richtext.js";
 import BotMessage from "./BotMessage.jsx";
 import { ListenButton } from "./VoiceButtons.jsx";
+import { FollowUpThread } from "./FollowUps.jsx";
 
 function dayLabel(iso) {
   const d = new Date(iso);
@@ -19,9 +22,10 @@ function dayLabel(iso) {
 
 const timeOf = (iso) => new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-export default function HistoryView({ history, activeId, onOpen, onDelete, onClear, onScan }) {
+export default function HistoryView({ history, activeId, onOpen, onDelete, onClear, onScan, syncedAt, onRefresh }) {
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState(null);
+  const confirm = useConfirm();
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -63,14 +67,21 @@ export default function HistoryView({ history, activeId, onOpen, onDelete, onCle
         <div>
           <h1>History</h1>
           <p className="muted">
-            {history.length} {history.length === 1 ? "session" : "sessions"} · {totalQuestions} questions · stored in
-            your account
-          </p>
+            {history.length} {history.length === 1 ? "session" : "sessions"} · {totalQuestions} questions</p>
+          <SyncStatus syncedAt={syncedAt} onRefresh={onRefresh} />
         </div>
         <button
           className="btn btn-ghost danger"
-          onClick={() => {
-            if (window.confirm("Clear your whole history? Saved answers are kept.")) onClear();
+          onClick={async () => {
+            if (
+              await confirm({
+                title: "Clear your whole history?",
+                message: "Every paper and question in your history will be removed from all your devices. Saved answers are kept.",
+                confirmLabel: "Clear history",
+                danger: true,
+              })
+            )
+              onClear();
           }}
         >
           <Trash2 size={16} /> Clear history
@@ -127,6 +138,7 @@ export default function HistoryView({ history, activeId, onOpen, onDelete, onCle
                               <SolutionView solution={q.solution} />
                             </BotMessage>
                           )}
+                          {q.solution && <FollowUpThread followups={q.followups} />}
                         </div>
                       ))}
                     </>
@@ -136,7 +148,20 @@ export default function HistoryView({ history, activeId, onOpen, onDelete, onCle
                     <button className="btn btn-sm" onClick={() => onOpen(e)}>
                       <ArrowRight size={15} /> {solved.length < e.questions.length ? "Continue" : "Open"}
                     </button>
-                    <button className="btn btn-ghost btn-sm danger" onClick={() => onDelete(e.id)}>
+                    <button
+                      className="btn btn-ghost btn-sm danger"
+                      onClick={async () => {
+                        if (
+                          await confirm({
+                            title: "Delete from history?",
+                            message: `\"${typed ? summarize(e.questions[0]?.text) : e.title}\" will be removed from your history on all your devices.`,
+                            confirmLabel: "Delete",
+                            danger: true,
+                          })
+                        )
+                          onDelete(e.id);
+                      }}
+                    >
                       <Trash2 size={15} /> Delete
                     </button>
                   </div>

@@ -7,8 +7,10 @@
  */
 export function createSyncQueue(onError) {
   const slots = new Map(); // key -> { pending: task | null }
+  let changes = 0; // counts local changes, so a refresh can tell if one happened while it was fetching
 
   function enqueue(key, task) {
+    changes += 1;
     const slot = slots.get(key);
     if (slot) {
       slot.pending = task;
@@ -36,5 +38,5 @@ export function createSyncQueue(onError) {
     for (const [key, slot] of slots) if (key.startsWith(prefix)) slot.pending = null;
   }
 
-  return { enqueue, dropPending, busy: () => slots.size > 0 };
+  return { enqueue, dropPending, busy: () => slots.size > 0, changeCount: () => changes };
 }

@@ -12,7 +12,8 @@
     "dev": "concurrently -n api,web -c blue,magenta \"npm run server\" \"npm run web\"",
     "desktop": "npm --prefix web run build && npm --prefix desktop start",
     "desktop:dist": "npm --prefix desktop run dist",
-    "mobile": "npm --prefix mobile start"
+    "mobile": "npm --prefix mobile start",
+    "mobile:apk": "npm --prefix mobile run build:apk"
   },
   "devDependencies": {
     "concurrently": "^10.0.6"

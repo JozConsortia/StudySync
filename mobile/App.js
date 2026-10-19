@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { Feather } from '@expo/vector-icons';
 import { ThemeProvider, useTheme, useThemedStyles } from './src/theme';
 import { api, tokenStore } from './src/api';
@@ -9,20 +10,25 @@ import { toSavedPayload } from './src/saved';
 import { newHistoryId, paperFromHistory, toHistoryPayload, upsertHistory } from './src/history';
 import { createSyncQueue } from './src/sync';
 import { clearLegacyData, readLegacyData } from './src/legacy';
-import { Button } from './src/components/ui';
+import { Backdrop, Button, Gradient, IconButton } from './src/components/ui';
 import Logo from './src/components/Logo';
 import { stopSpeaking } from './src/speech';
 import AuthScreen from './src/screens/AuthScreen';
 import ScanScreen from './src/screens/ScanScreen';
 import SavedScreen from './src/screens/SavedScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import ChallengesScreen from './src/screens/ChallengesScreen';
+import AccountScreen from './src/screens/AccountScreen';
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <ThemeProvider>
-        <Shell />
-      </ThemeProvider>
+      {/* Tracks the keyboard so text boxes can move above it (see components/KeyboardAware.js). */}
+      <KeyboardProvider>
+        <ThemeProvider>
+          <Shell />
+        </ThemeProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }
@@ -53,6 +59,7 @@ function Main() {
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
   const [tab, setTab] = useState('scan');
+  const [challengeStats, setChallengeStats] = useState(null);
   const [paper, setPaper] = useState(null);
   const [saved, setSaved] = useState([]);
   const [history, setHistory] = useState([]);
@@ -81,8 +88,9 @@ function Main() {
     (async () => {
       try {
         if (await tokenStore.get()) setUser((await api.me()).user);
-      } catch {
-        await tokenStore.set(null);
+      } catch (err) {
+        // Only forget the sign-in when the server rejects it, not when the server can't be reached.
+        if (err.status === 401) await tokenStore.set(null);
       } finally {
         setBooting(false);
       }
@@ -128,6 +136,47 @@ function Main() {
     if (user) loadAccountData(user.id);
     else setDataStatus('idle');
   }, [user, loadAccountData]);
+
+  // ---------- sync across devices
+  // History and saved answers live in the database, so whatever is done on the web, the desktop app or
+  // another phone shows up here: the lists are re-read when the app comes back to the foreground, when
+  // History or Saved is opened, every 20 seconds while the app is open, and on pull-to-refresh.
+  const [syncedAt, setSyncedAt] = useState(null);
+  const refreshing = useRef(false);
+
+  const refreshFromServer = useCallback(async () => {
+    if (!user || refreshing.current || sync.busy() || AppState.currentState !== 'active') return;
+    refreshing.current = true;
+    const changesBefore = sync.changeCount();
+    try {
+      const [serverHistory, serverSaved] = await Promise.all([api.history.list(), api.saved.list()]);
+      // A local change made while fetching wins; the next refresh will include it.
+      if (sync.busy() || sync.changeCount() !== changesBefore) return;
+      historyRef.current = serverHistory;
+      setHistory(serverHistory);
+      setSaved(serverSaved);
+      setSyncedAt(new Date());
+    } catch {
+      // offline or the server is restarting: try again on the next refresh
+    } finally {
+      refreshing.current = false;
+    }
+  }, [user, sync]);
+
+  useEffect(() => {
+    if (dataStatus !== 'ready') return;
+    setSyncedAt(new Date());
+    const sub = AppState.addEventListener('change', (state) => state === 'active' && refreshFromServer());
+    const timer = setInterval(refreshFromServer, 20000);
+    return () => {
+      sub.remove();
+      clearInterval(timer);
+    };
+  }, [dataStatus, refreshFromServer]);
+
+  useEffect(() => {
+    if (tab !== 'scan' && dataStatus === 'ready') refreshFromServer();
+  }, [tab, dataStatus, refreshFromServer]);
 
   // ---------- history
 
@@ -248,32 +297,43 @@ function Main() {
       </View>
     ) : null;
 
+  const initials = (user.fullName || user.email || '?')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('');
+
   return (
     <View style={{ flex: 1 }}>
+      <Backdrop />
       <View style={styles.topbar}>
         <Logo />
         <View style={{ flex: 1 }} />
-        <Pressable onPress={toggle} hitSlop={10} accessibilityLabel={mode === 'dark' ? 'Switch to bright mode' : 'Switch to dark mode'}>
-          <Feather name={mode === 'dark' ? 'sun' : 'moon'} size={18} color={colors.muted} />
-        </Pressable>
-        <Text style={styles.userName} numberOfLines={1}>
-          {user.fullName}
-        </Text>
-        <Pressable onPress={logout} hitSlop={10} accessibilityLabel="Sign out">
-          <Feather name="log-out" size={18} color={colors.muted} />
+        <IconButton
+          icon={mode === 'dark' ? 'sun' : 'moon'}
+          onPress={toggle}
+          label={mode === 'dark' ? 'Switch to bright mode' : 'Switch to dark mode'}
+        />
+        <Pressable onPress={() => setTab('me')} hitSlop={6} accessibilityLabel="Your account">
+          <Gradient style={styles.avatar}>
+            <Text style={styles.avatarText}>{initials}</Text>
+          </Gradient>
         </Pressable>
       </View>
 
       {!!syncError && (
         <Pressable style={styles.syncError} onPress={() => setSyncError('')} accessibilityRole="alert">
           <Text style={styles.syncErrorText}>{syncError}</Text>
-          <Feather name="x" size={16} color="#ffb3b3" />
+          <Feather name="x" size={16} color={colors.alertText} />
         </Pressable>
       )}
 
       <View style={{ flex: 1 }}>
         {tab === 'scan' && (
           <ScanScreen
+            user={user}
+            stats={{ history: history.length, saved: saved.length }}
             paper={paper}
             setPaper={setPaper}
             updatePaper={updatePaper}
@@ -292,15 +352,48 @@ function Main() {
               onDelete={deleteHistory}
               onClear={clearHistory}
               onScan={() => setTab('scan')}
+              syncedAt={syncedAt}
+              onRefresh={refreshFromServer}
             />
           ))}
         {tab === 'saved' &&
-          (dataGate || <SavedScreen saved={saved} onUnsave={unsaveAnswer} onScan={() => setTab('scan')} />)}
+          (dataGate || (
+            <SavedScreen
+              saved={saved}
+              onUnsave={unsaveAnswer}
+              onScan={() => setTab('scan')}
+              syncedAt={syncedAt}
+              onRefresh={refreshFromServer}
+            />
+          ))}
+        {tab === 'challenges' && <ChallengesScreen onStats={setChallengeStats} />}
+        {tab === 'me' && (
+          <AccountScreen
+            user={user}
+            stats={challengeStats}
+            onAuth={onAuth}
+            onSignOut={logout}
+            onOpenChallenges={() => setTab('challenges')}
+          />
+        )}
       </View>
 
+      {/* Floating tab bar; Scan sits in the middle as a raised gradient button. */}
       <View style={styles.tabbar}>
-        <TabButton icon="camera" label="Scan" active={tab === 'scan'} onPress={() => setTab('scan')} />
+        <TabButton icon="award" label="Daily" active={tab === 'challenges'} onPress={() => setTab('challenges')} />
         <TabButton icon="clock" label="History" active={tab === 'history'} onPress={() => setTab('history')} />
+        <Pressable
+          style={styles.scanTab}
+          onPress={() => setTab('scan')}
+          accessibilityRole="tab"
+          accessibilityLabel="Scan"
+          accessibilityState={{ selected: tab === 'scan' }}
+        >
+          <Gradient style={[styles.scanButton, tab === 'scan' && styles.scanButtonActive]}>
+            <Feather name="camera" size={24} color="#fff" />
+          </Gradient>
+          <Text style={[styles.tabLabel, { color: tab === 'scan' ? colors.text : colors.muted }]}>Scan</Text>
+        </Pressable>
         <TabButton
           icon="bookmark"
           label="Saved"
@@ -308,6 +401,7 @@ function Main() {
           active={tab === 'saved'}
           onPress={() => setTab('saved')}
         />
+        <TabButton icon="user" label="Me" active={tab === 'me'} onPress={() => setTab('me')} />
       </View>
     </View>
   );
@@ -316,18 +410,17 @@ function Main() {
 function TabButton({ icon, label, active, onPress, badge }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const color = active ? colors.text : colors.muted;
   return (
     <Pressable style={styles.tab} onPress={onPress} accessibilityRole="tab" accessibilityState={{ selected: active }}>
-      <View>
+      <View style={[styles.tabIcon, active && styles.tabIconActive]}>
         <Feather name={icon} size={20} color={active ? colors.accent : colors.muted} />
         {!!badge && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{badge}</Text>
-          </View>
+          <Gradient style={styles.badge}>
+            <Text style={styles.badgeText}>{badge > 99 ? '99+' : badge}</Text>
+          </Gradient>
         )}
       </View>
-      <Text style={[styles.tabLabel, { color }]}>{label}</Text>
+      <Text style={[styles.tabLabel, { color: active ? colors.text : colors.muted }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -354,34 +447,53 @@ const makeStyles = (colors) =>
   topbar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  userName: { color: colors.muted, fontSize: 14, maxWidth: 150 },
-  tabbar: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.bg,
     paddingTop: 8,
     paddingBottom: 6,
   },
-  tab: { flex: 1, alignItems: 'center', gap: 3 },
-  tabLabel: { fontSize: 12, fontWeight: '600' },
+  avatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  tabbar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    marginTop: 4,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.tabBar,
+    boxShadow: `0 10px 30px ${colors.shadow}33`,
+  },
+  tab: { flex: 1, alignItems: 'center', gap: 2 },
+  tabIcon: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999 },
+  tabIconActive: { backgroundColor: colors.accentSoft },
+  tabLabel: { fontSize: 11.5, fontWeight: '700' },
+  scanTab: { flex: 1, alignItems: 'center', gap: 4, marginTop: -30 },
+  scanButton: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 4,
+    borderColor: colors.bg,
+    boxShadow: `0 8px 22px ${colors.glow1}66`,
+  },
+  scanButtonActive: { transform: [{ scale: 1.06 }] },
   badge: {
     position: 'absolute',
-    top: -6,
-    right: -12,
+    top: -2,
+    right: 4,
     minWidth: 18,
     paddingHorizontal: 4,
     height: 18,
     borderRadius: 9,
-    backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 });

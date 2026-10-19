@@ -9,7 +9,13 @@
     "backgroundColor": "#000000",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.studysync.mobile"
+      "bundleIdentifier": "com.studysync.mobile",
+      "infoPlist": {
+        "NSLocalNetworkUsageDescription": "StudySync connects to the StudySync server on your local network.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
     },
     "android": {
       "package": "com.studysync.mobile",
@@ -39,7 +45,15 @@
           "microphonePermission": "StudySync uses the microphone so you can speak your questions."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
     ]
   }
 }

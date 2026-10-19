@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pymysql
 
-from app import config
+from app import config, db
 
 SCHEMA = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
 
@@ -29,6 +29,8 @@ def main():
             for stmt in statements:
                 cur.execute(stmt)
             migrate(cur)
+            for name in db.add_missing_columns(cur, config.DB["database"]):
+                print(f"Migrated: added {name}.")
     finally:
         conn.close()
     print(f'Database "{config.DB["database"]}" is ready.')

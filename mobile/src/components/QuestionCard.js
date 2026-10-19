@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useTheme, useThemedStyles } from '../theme';
-import { Button, Card, Chip, ErrorBox } from './ui';
+import { Button, Card, Chip, ErrorBox, Gradient } from './ui';
 import SolutionView from './SolutionView';
 import { BotMessage } from './Bot';
 import { ListenButton } from './VoiceButtons';
 import RichText from './RichText';
+import FollowUps from './FollowUps';
 
-export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload }) {
+export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload, onFollowUp }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [editing, setEditing] = useState(false);
@@ -20,13 +21,22 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
     setEditing(false);
   };
 
+  const status = {
+    idle: { color: colors.borderStrong, label: null },
+    solving: { color: colors.accent, label: ['loader', 'Solving', 'accent'] },
+    done: { color: colors.success, label: ['check', 'Solved', 'success'] },
+    error: { color: colors.danger, label: null },
+  }[q.status] || { color: colors.borderStrong, label: null };
+
   return (
     <Card style={[styles.card, q.status === 'done' && { borderColor: colors.doneBorder }]}>
+      <View style={[styles.stripe, { backgroundColor: status.color }]} />
       <View style={styles.head}>
-        <View style={styles.qNumber}>
+        <Gradient style={styles.qNumber}>
           <Text style={styles.qNumberText}>Q{q.number}</Text>
-        </View>
-        {q.marks != null && <Chip label={`${q.marks} marks`} />}
+        </Gradient>
+        {q.marks != null && <Chip label={`${q.marks} marks`} icon="award" />}
+        {status.label && <Chip icon={status.label[0]} label={status.label[1]} tone={status.label[2]} />}
         <View style={{ flex: 1 }} />
         {!editing && q.status !== 'solving' && (
           <Pressable
@@ -36,8 +46,9 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
               setEditing(true);
             }}
             accessibilityLabel="Edit question"
+            style={styles.edit}
           >
-            <Feather name="edit-2" size={16} color={colors.muted} />
+            <Feather name="edit-2" size={14} color={colors.muted} />
           </Pressable>
         )}
       </View>
@@ -84,10 +95,21 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
               size="sm"
               onPress={onToggleSave}
             />
-            <Button title="Download" icon="download" size="sm" onPress={onDownload} />
+            <Button title="PDF" icon="download" size="sm" onPress={onDownload} />
             <Button title="Redo" icon="rotate-ccw" variant="ghost" size="sm" onPress={onSolve} />
           </View>
         </BotMessage>
+      )}
+
+      {q.status === 'done' && q.solution && (
+        <FollowUps
+          followups={q.followups}
+          pending={q.followupPending}
+          failed={q.followupFailed}
+          onAsk={onFollowUp}
+          questionNumber={q.number}
+          questionText={q.text}
+        />
       )}
     </Card>
   );
@@ -95,15 +117,24 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
 
 const makeStyles = (colors) =>
   StyleSheet.create({
-  card: { gap: 12 },
+  card: { gap: 12, paddingLeft: 20, overflow: 'hidden' },
+  stripe: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  qNumber: { paddingHorizontal: 8, height: 24, borderRadius: 7, backgroundColor: colors.accentSoft, justifyContent: 'center' },
-  qNumberText: { color: colors.accent, fontWeight: '700', fontSize: 13 },
-  qText: { color: colors.text, fontSize: 15, lineHeight: 22 },
+  qNumber: { paddingHorizontal: 10, height: 26, borderRadius: 9, justifyContent: 'center' },
+  qNumberText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  edit: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface2,
+  },
+  qText: { color: colors.text, fontSize: 15.5, lineHeight: 23 },
   input: {
     minHeight: 100,
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.inputBg,

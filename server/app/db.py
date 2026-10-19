@@ -1,6 +1,7 @@
 import json
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -43,6 +44,50 @@ def transaction():
         except BaseException:
             conn.rollback()
             raise
+
+
+# Columns added after the first release. ensure_schema() adds any that an existing database is missing.
+NEW_COLUMNS = [
+    ("history_questions", "followups", "JSON NULL AFTER tips"),
+    ("saved_answers", "followups", "JSON NULL AFTER tips"),
+]
+
+
+def add_missing_columns(cur, database: str) -> list[str]:
+    """Adds NEW_COLUMNS that are missing (for databases created by an older schema). Returns what was added."""
+    added = []
+    for table, column, definition in NEW_COLUMNS:
+        cur.execute(
+            "SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+            (database, table, column),
+        )
+        row = cur.fetchone()
+        if (row["n"] if isinstance(row, dict) else row[0]) == 0:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            added.append(f"{table}.{column}")
+    return added
+
+
+SCHEMA_FILE = Path(__file__).resolve().parents[2] / "database" / "schema.sql"
+
+
+def create_missing_tables(cur) -> None:
+    """Runs the CREATE TABLE IF NOT EXISTS statements from database/schema.sql (new tables in later versions)."""
+    sql = "\n".join(line for line in SCHEMA_FILE.read_text(encoding="utf-8").splitlines() if not line.strip().startswith("--"))
+    for stmt in (s.strip() for s in sql.split(";")):
+        if stmt.upper().startswith("CREATE TABLE"):
+            cur.execute(stmt)
+
+
+def ensure_schema() -> None:
+    """Run at startup so an existing database picks up new tables and columns without running init_db.py."""
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            create_missing_tables(cur)
+            for name in add_missing_columns(cur, config.DB["database"]):
+                config.log.info("Database updated: added %s", name)
+    except Exception as exc:
+        config.log.warning("Could not check the database schema: %s", exc)
 
 
 def ping() -> bool:
@@ -112,15 +157,16 @@ def create_user(full_name: str, email: str, password_hash: str):
 # ---------------------------------------------------------------- history
 
 
-def _solution_columns(solution: dict | None):
+def _solution_columns(solution: dict | None, followups: list | None = None):
     if not solution:
-        return (False, None, None, None, None)
+        return (False, None, None, None, None, None)
     return (
         True,
         solution.get("answer", ""),
         json.dumps(solution.get("steps", [])),
         solution.get("explanation", ""),
         json.dumps(solution.get("tips", [])),
+        json.dumps(followups) if followups else None,
     )
 
 
@@ -151,6 +197,7 @@ def _session_row_to_dict(s: dict, questions: list[dict]) -> dict:
                     if q["solved"]
                     else None
                 ),
+                "followups": (_json(q.get("followups")) or []) if q["solved"] else [],
             }
             for q in questions
         ],
@@ -210,11 +257,19 @@ def save_history_session(user_id: int, client_id: str, data: dict) -> None:
                 """
                 INSERT INTO history_questions
                     (session_id, position, question_ref, question_number, question_text, marks,
-                     solved, answer, steps, explanation, tips)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     solved, answer, steps, explanation, tips, followups)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
-                    (session_id, i, q["id"], q["number"], q["text"], q["marks"], *_solution_columns(q["solution"]))
+                    (
+                        session_id,
+                        i,
+                        q["id"],
+                        q["number"],
+                        q["text"],
+                        q["marks"],
+                        *_solution_columns(q["solution"], q.get("followups")),
+                    )
                     for i, q in enumerate(data["questions"])
                 ],
             )
@@ -259,6 +314,7 @@ def _saved_row_to_dict(r: dict) -> dict:
             "explanation": r["explanation"],
             "tips": _json(r["tips"]) or [],
         },
+        "followups": _json(r.get("followups")) or [],
         "savedAt": iso(r["saved_at"]),
     }
 
@@ -276,12 +332,13 @@ def save_answer(user_id: int, item: dict) -> dict:
             """
             INSERT INTO saved_answers
                 (user_id, saved_key, paper_title, subject, question_number, question_text, marks,
-                 answer, steps, explanation, tips, saved_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 answer, steps, explanation, tips, followups, saved_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 paper_title = VALUES(paper_title), subject = VALUES(subject), question_number = VALUES(question_number),
                 question_text = VALUES(question_text), marks = VALUES(marks), answer = VALUES(answer),
-                steps = VALUES(steps), explanation = VALUES(explanation), tips = VALUES(tips)
+                steps = VALUES(steps), explanation = VALUES(explanation), tips = VALUES(tips),
+                followups = VALUES(followups)
             """,
             (
                 user_id,
@@ -295,6 +352,7 @@ def save_answer(user_id: int, item: dict) -> dict:
                 json.dumps(s["steps"]),
                 s["explanation"],
                 json.dumps(s["tips"]),
+                json.dumps(item["followups"]) if item.get("followups") else None,
                 _to_mysql_time(item.get("savedAt")),
             ),
         )
@@ -305,3 +363,151 @@ def save_answer(user_id: int, item: dict) -> dict:
 def delete_saved(user_id: int, saved_key: str) -> bool:
     with connect() as conn, conn.cursor() as cur:
         return cur.execute("DELETE FROM saved_answers WHERE user_id = %s AND saved_key = %s", (user_id, saved_key)) > 0
+
+
+def update_password(user_id: int, password_hash: str) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+
+
+# ---------------------------------------------------------------- password reset codes
+
+
+def reset_code_age(user_id: int) -> int | None:
+    """Seconds since this user's current reset code was sent, or None if there is none."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT TIMESTAMPDIFF(SECOND, created_at, UTC_TIMESTAMP()) AS age FROM password_resets WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
+    return row["age"] if row else None
+
+
+def save_reset_code(user_id: int, code_hash: str, minutes: int) -> None:
+    """Stores a new code for the user, replacing any earlier one."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            REPLACE INTO password_resets (user_id, code_hash, expires_at, attempts, created_at)
+            VALUES (%s, %s, UTC_TIMESTAMP() + INTERVAL %s MINUTE, 0, UTC_TIMESTAMP())
+            """,
+            (user_id, code_hash, minutes),
+        )
+
+
+def get_reset_code(user_id: int):
+    """{code_hash, attempts, expired} for the user's current code, or None."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT code_hash, attempts, expires_at < UTC_TIMESTAMP() AS expired FROM password_resets WHERE user_id = %s",
+            (user_id,),
+        )
+        return cur.fetchone()
+
+
+def count_reset_attempt(user_id: int) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE password_resets SET attempts = attempts + 1 WHERE user_id = %s", (user_id,))
+
+
+def delete_reset_code(user_id: int) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM password_resets WHERE user_id = %s", (user_id,))
+
+
+# ---------------------------------------------------------------- daily challenges
+
+
+def _challenge_row(r: dict | None) -> dict | None:
+    if not r:
+        return None
+    return {
+        "day": r["day"].isoformat(),
+        "difficulty": r["difficulty"],
+        "items": _json(r["items"]) or [],
+        "results": _json(r["results"]) or {},
+        "score": r["score"],
+        "maxScore": r["max_score"],
+        "completedAt": iso(r["completed_at"]),
+    }
+
+
+def get_challenge(user_id: int, day: date) -> dict | None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM daily_challenges WHERE user_id = %s AND day = %s", (user_id, day))
+        return _challenge_row(cur.fetchone())
+
+
+def insert_challenge(user_id: int, day: date, difficulty: str, items: list[dict]) -> None:
+    """Adds the day's challenges unless they already exist (two devices opening the app at once)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT IGNORE INTO daily_challenges (user_id, day, difficulty, items, results, score, max_score)
+            VALUES (%s, %s, %s, %s, %s, 0, %s)
+            """,
+            (user_id, day, difficulty, json.dumps(items), json.dumps({}), sum(i["points"] for i in items)),
+        )
+
+
+def record_challenge_result(user_id: int, day: date, item_id: str, result: dict) -> dict | None:
+    """Saves the result of one challenge (the first answer counts) and updates the day's score."""
+    with transaction() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM daily_challenges WHERE user_id = %s AND day = %s FOR UPDATE", (user_id, day))
+        row = cur.fetchone()
+        if not row:
+            return None
+        items = _json(row["items"]) or []
+        results = _json(row["results"]) or {}
+        if item_id not in results:
+            results[item_id] = result
+            score = sum(int(r.get("score") or 0) for r in results.values())
+            done = all(i["id"] in results for i in items)
+            cur.execute(
+                """
+                UPDATE daily_challenges SET results = %s, score = %s,
+                    completed_at = IF(%s, COALESCE(completed_at, UTC_TIMESTAMP()), NULL)
+                WHERE id = %s
+                """,
+                (json.dumps(results), score, done, row["id"]),
+            )
+        cur.execute("SELECT * FROM daily_challenges WHERE id = %s", (row["id"],))
+        return _challenge_row(cur.fetchone())
+
+
+def challenge_history(user_id: int) -> list[dict]:
+    """Every day the user had challenges: day, score, max score and whether it was completed (newest first)."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT day, score, max_score, completed_at FROM daily_challenges WHERE user_id = %s ORDER BY day DESC",
+            (user_id,),
+        )
+        return [
+            {"day": r["day"], "score": r["score"], "maxScore": r["max_score"], "completed": r["completed_at"] is not None}
+            for r in cur.fetchall()
+        ]
+
+
+def recent_study_topics(user_id: int) -> tuple[list[str], list[str]]:
+    """The subjects and paper titles the user studied most recently, to make challenges personal."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT subject, title FROM history_sessions WHERE user_id = %s ORDER BY updated_at DESC LIMIT 30",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    subjects, titles = [], []
+    for r in rows:
+        if r["subject"] and r["subject"] not in subjects:
+            subjects.append(r["subject"])
+        if r["title"] and r["title"] not in titles:
+            titles.append(r["title"])
+    return subjects[:5], titles[:8]
+
+
+def recent_challenge_questions(user_id: int, before: date, days: int = 4) -> list[str]:
+    """Questions from the last few days, so new challenges do not repeat them."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT items FROM daily_challenges WHERE user_id = %s AND day < %s ORDER BY day DESC LIMIT %s",
+            (user_id, before, days),
+        )
+        return [str(i.get("question", ""))[:200] for r in cur.fetchall() for i in (_json(r["items"]) or [])]

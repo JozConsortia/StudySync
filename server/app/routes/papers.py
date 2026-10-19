@@ -1,13 +1,14 @@
 import re
 
 from fastapi import APIRouter, Depends, File, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import config
 from ..errors import ApiError
 from ..security import current_user_id
-from ..services.ai import solve_question, split_questions, transcribe_audio
+from ..services.ai import answer_followup, solve_question, split_questions, transcribe_audio
 from ..services.ocr import extract_text
+from .schemas import MAX_FOLLOWUPS, FollowUp, Solution
 
 router = APIRouter(prefix="/api/papers", dependencies=[Depends(current_user_id)])
 
@@ -80,6 +81,25 @@ def solve(body: SolveBody):
     if len(text) > 8000:
         raise ApiError(400, "Question is too long.")
     return solve_question(text, (body.subject or "")[:100], body.marks, (body.context or "").strip()[:8000])
+
+
+class FollowUpBody(BaseModel):
+    question: str = Field(min_length=1, max_length=20000)  # the original exam question
+    subject: str | None = Field(None, max_length=100)
+    solution: Solution | None = None
+    history: list[FollowUp] = Field(default_factory=list, max_length=MAX_FOLLOWUPS)  # earlier follow-ups
+    message: str = Field(min_length=1, max_length=4000)  # the new follow-up question
+
+
+@router.post("/followup")
+def followup(body: FollowUpBody):
+    """Answers a follow-up question about a solved question ("why step 2?", "give me another example")."""
+    message = body.message.strip()
+    if not message:
+        raise ApiError(400, "Type a follow-up question first.")
+    solution = body.solution.model_dump() if body.solution else None
+    history = [h.model_dump() for h in body.history]
+    return {"answer": answer_followup(body.question.strip(), solution, history, message, (body.subject or "").strip())}
 
 
 # Formats Gemini can listen to. The web app records WAV; Android records AAC; iOS records WAV.

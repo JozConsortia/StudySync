@@ -1,7 +1,8 @@
 """Text extraction from exam papers.
 
-Text-based PDF pages are read directly with PyMuPDF. Scanned PDF pages and images go
-through RapidOCR (ONNX models, no system install needed; models download on first use).
+Scanned PDF pages and images go through RapidOCR (PP-OCR models on ONNX Runtime, no system install
+needed; models download on first use). With OCR_MODE=auto, PDF pages that already contain text are read
+directly with PyMuPDF instead; OCR_MODE=rapidocr sends every page through RapidOCR.
 """
 
 import threading
@@ -10,6 +11,7 @@ import cv2
 import numpy as np
 import pymupdf
 
+from .. import config
 from ..errors import ApiError
 
 MAX_PDF_PAGES = 30
@@ -32,6 +34,15 @@ def _ocr_engine():
 
             _engine = RapidOCR()
         return _engine
+
+
+def warm_up() -> None:
+    """Loads the RapidOCR models ahead of the first upload, so it is not slowed down by the model loading."""
+    try:
+        _ocr_engine()
+        config.log.info("RapidOCR is ready.")
+    except Exception as exc:  # the first upload will try again and report the error
+        config.log.warning("RapidOCR could not be loaded yet: %s", exc)
 
 
 def _boxes_to_lines(boxes, txts) -> str:
@@ -148,7 +159,7 @@ def extract_text(data: bytes, mimetype: str) -> dict:
         pages: list[str] = []
         scanned = 0
         for page in doc.pages(0, min(doc.page_count, MAX_PDF_PAGES)):
-            text = _pdf_page_text(page)
+            text = "" if config.OCR_MODE == "rapidocr" else _pdf_page_text(page)
             if len("".join(text.split())) < MIN_TEXT_CHARS_PER_PAGE:
                 text = _ocr_image(_pixmap_to_image(page.get_pixmap(dpi=SCAN_DPI, alpha=False)))
                 scanned += 1

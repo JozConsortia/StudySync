@@ -4,8 +4,10 @@ The AI is asked to do all of this itself, but smaller models do not always follo
 so the server enforces them. Nothing here ever executes code.
 """
 
+import ast
 import math
 import re
+import textwrap
 
 FENCE = "`" * 3
 CODE_BLOCK_RE = re.compile(r"```([^\n`]*)\n(.*?)```", re.S)
@@ -249,6 +251,8 @@ def format_code(text: str) -> str:
     def tidy(m: re.Match) -> str:
         code = tidy_indentation(m.group(2))
         lang = m.group(1).strip() or _guess_language(code)  # label unlabelled blocks so they get checked
+        if lang.lower() not in OUTPUT_LANGS:
+            code = wrap_long_comments(code, lang.lower())
         return f"{FENCE}{lang}\n{code}\n{FENCE}"
 
     return CODE_BLOCK_RE.sub(tidy, text)
@@ -312,14 +316,96 @@ def same_code_ignoring_comments(original: str, commented: str, lang: str) -> boo
 
 
 def has_comments(code: str, lang: str) -> bool:
-    """True if the code is reasonably commented: about one comment for every three lines of code."""
+    """True if the code is commented well enough for a beginner: about one comment for every two lines of code."""
     original = code.split("\n")
     stripped = strip_comments(code, lang).split("\n")
     code_lines = sum(1 for ln in stripped if ln.strip())
     commented = sum(1 for orig, bare in zip(original, stripped) if orig.strip() and orig.rstrip() != bare.rstrip())
     if lang not in PYTHON_LANGS:
         commented += len(re.findall(r"/\*", code))  # block comments
-    return commented >= max(1, math.ceil(code_lines / 3))
+    return commented >= max(1, math.ceil(code_lines / 2))
+
+
+# ---------------------------------------------------------------- beginner-friendly Python
+
+# Shortcuts that make code hard for a beginner to read. Each is allowed when the question asks for it
+# by name (the regex is matched against the question).
+BEGINNER_UNFRIENDLY = {
+    "list comprehension": r"comprehension",
+    "generator expression": r"generator",
+    "lambda": r"lambda",
+    "one-line if/else (x if condition else y)": r"ternary|conditional expression|one[- ]line",
+    "walrus operator (:=)": r"walrus|:=",
+    "slicing with a step such as [::-1]": r"slic|\[::",
+    "map() / filter() / reduce()": r"\bmap\b|\bfilter\b|\breduce\b",
+    "lines longer than 90 characters": r"$^",  # never requested
+}
+
+
+COMMENT_WIDTH = 80
+
+
+def wrap_long_comments(code: str, lang: str) -> str:
+    """Keeps comments readable on small screens.
+
+    A long comment line is wrapped onto several comment lines. A long comment at the end of a line of
+    code is moved onto its own line(s) above that code, where beginners expect to find it.
+    """
+    markers = _comment_markers(lang)
+    marker = markers[0]
+    out = []
+    for line in code.split("\n"):
+        bare = strip_comments(line, lang)
+        comment = line[len(bare):].strip()
+        if not comment or len(line) <= 90:
+            out.append(line)
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        text = comment
+        for m in markers:
+            if text.startswith(m):
+                text = text[len(m):].strip()
+                break
+        prefix = " " * indent + marker + " "
+        out.extend(prefix + part for part in textwrap.wrap(text, max(30, COMMENT_WIDTH - len(prefix))))
+        if bare.strip():  # the comment was at the end of a line of code: keep the code after it
+            out.append(bare.rstrip())
+    return "\n".join(out)
+
+
+def beginner_unfriendly_python(answer: str, question: str = "") -> list[str]:
+    """Shortcuts in the answer's Python code that a beginner would struggle to read.
+
+    The code is parsed (never run). Features the question explicitly asks for are not reported.
+    """
+    found: set[str] = set()
+    for lang, code in code_blocks(answer):
+        if lang not in PYTHON_LANGS:
+            continue
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            continue  # syntax errors are handled separately
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp)):
+                found.add("list comprehension")
+            elif isinstance(node, ast.GeneratorExp):
+                found.add("generator expression")
+            elif isinstance(node, ast.Lambda):
+                found.add("lambda")
+            elif isinstance(node, ast.IfExp):
+                found.add("one-line if/else (x if condition else y)")
+            elif isinstance(node, ast.NamedExpr):
+                found.add("walrus operator (:=)")
+            elif isinstance(node, ast.Slice) and node.step is not None:
+                found.add("slicing with a step such as [::-1]")
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in ("map", "filter", "reduce"):
+                found.add("map() / filter() / reduce()")
+        # Long comments are wrapped by the server, so only long lines of actual code count here.
+        if any(len(line) > 90 for line in strip_comments(code, lang).split("\n")):
+            found.add("lines longer than 90 characters")
+    asked = question.lower()
+    return sorted(f for f in found if not re.search(BEGINNER_UNFRIENDLY[f], asked))
 
 
 def code_squeezed_on_one_line(text: str) -> bool:

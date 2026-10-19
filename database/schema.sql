@@ -52,9 +52,39 @@ CREATE TABLE IF NOT EXISTS history_questions (
   steps           JSON         NULL,              -- [{"title": ..., "detail": ...}]
   explanation     TEXT         NULL,
   tips            JSON         NULL,              -- ["...", "..."]
+  followups       JSON         NULL,              -- [{"question": ..., "answer": ..., "askedAt": ...}]
   PRIMARY KEY (id),
   KEY ix_questions_session (session_id, position),
   CONSTRAINT fk_questions_session FOREIGN KEY (session_id) REFERENCES history_sessions (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- One-time codes for "Forgot password". One active code per user, stored only as a hash.
+CREATE TABLE IF NOT EXISTS password_resets (
+  user_id     INT UNSIGNED NOT NULL,
+  code_hash   CHAR(64)     NOT NULL,
+  expires_at  DATETIME     NOT NULL,              -- UTC
+  attempts    TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  created_at  DATETIME     NOT NULL,              -- UTC
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_resets_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- Each user's daily challenges: the questions (with their answers, never sent to the app before they are
+-- answered), the student's results and the day's score.
+CREATE TABLE IF NOT EXISTS daily_challenges (
+  id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id       INT UNSIGNED NOT NULL,
+  day           DATE         NOT NULL,            -- the student's local date
+  difficulty    VARCHAR(10)  NOT NULL,            -- easy, medium, hard
+  items         JSON         NOT NULL,
+  results       JSON         NULL,                -- {"c1": {"score": 10, ...}, ...}
+  score         SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  max_score     SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  completed_at  TIMESTAMP    NULL,
+  created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_challenge_user_day (user_id, day),
+  CONSTRAINT fk_challenge_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 -- Answers a user bookmarked with "Save".
@@ -71,6 +101,7 @@ CREATE TABLE IF NOT EXISTS saved_answers (
   steps           JSON         NOT NULL,
   explanation     TEXT         NOT NULL,
   tips            JSON         NOT NULL,
+  followups       JSON         NULL,              -- follow-up questions and replies, as in history_questions
   saved_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_saved_user_key (user_id, saved_key),

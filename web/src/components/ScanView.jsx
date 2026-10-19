@@ -3,6 +3,7 @@ import { Download, FilePlus2, FileText, LoaderCircle, MessageSquareText, Send, S
 import { api } from "../lib/api.js";
 import { downloadPdf } from "../lib/pdf.js";
 import { savedId } from "../lib/saved.js";
+import { toFollowupsPayload } from "../lib/followups.js";
 import { sectionContext } from "../lib/context.js";
 import { handleIndentKey, looksLikeCode } from "../lib/editor.js";
 import { summarize } from "../lib/richtext.js";
@@ -15,8 +16,8 @@ const SOLVE_CONCURRENCY = 3;
 
 const METHOD_LABEL = {
   "pdf-text": "Text PDF",
-  ocr: "OCR",
-  "pdf-text+ocr": "Text PDF + OCR",
+  ocr: "RapidOCR",
+  "pdf-text+ocr": "Text PDF + RapidOCR",
 };
 
 export default function ScanView({ paper, setPaper, updatePaper, startPaper, saved, onSave, onUnsave }) {
@@ -233,8 +234,9 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
       questions: p.questions.map((q) => (q.id === id ? { ...q, ...patch } : q)),
     }));
 
+  // A new solution starts a new conversation, so earlier follow-ups are cleared.
   const solve = async (q) => {
-    update(q.id, { status: "solving", error: "" });
+    update(q.id, { status: "solving", error: "", followups: [], followupFailed: null });
     try {
       const solution = await api.solve(q, paper.subject, sectionContext(paper.questions, q));
       update(q.id, { status: "done", solution });
@@ -263,21 +265,36 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
     setSolvingAll(false);
   };
 
+  const savedItem = (q) => ({
+    id: savedId(paper.title, q),
+    paperTitle: paper.title,
+    subject: paper.subject,
+    number: q.number,
+    text: q.text,
+    marks: q.marks,
+    solution: q.solution,
+    followups: q.followups || [],
+    savedAt: new Date().toISOString(),
+  });
+
   const toggleSave = (q) => {
     const id = savedId(paper.title, q);
-    if (savedIds.has(id)) {
-      onUnsave(id);
-    } else {
-      onSave({
-        id,
-        paperTitle: paper.title,
-        subject: paper.subject,
-        number: q.number,
-        text: q.text,
-        marks: q.marks,
-        solution: q.solution,
-        savedAt: new Date().toISOString(),
-      });
+    if (savedIds.has(id)) onUnsave(id);
+    else onSave(savedItem(q));
+  };
+
+  // Follow-up questions are answered in the context of the question, its solution and earlier follow-ups.
+  // The reply is added to the question (and to its saved copy, if it is saved).
+  const askFollowUp = async (q, message) => {
+    update(q.id, { followupPending: message, followupFailed: null });
+    try {
+      const { answer } = await api.followup(q, paper.subject, toFollowupsPayload(q.followups), message);
+      const turn = { question: message, answer, askedAt: new Date().toISOString() };
+      const followups = [...(q.followups || []), turn];
+      update(q.id, { followups, followupPending: null });
+      if (savedIds.has(savedId(paper.title, q))) onSave(savedItem({ ...q, followups }));
+    } catch (err) {
+      update(q.id, { followupPending: null, followupFailed: { question: message, error: err.message } });
     }
   };
 
@@ -365,9 +382,10 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
             key={q.id}
             question={q}
             onSolve={() => solve(q)}
-            onEdit={(text) => update(q.id, { text, status: "idle", solution: null, error: "" })}
+            onEdit={(text) => update(q.id, { text, status: "idle", solution: null, error: "", followups: [] })}
             isSaved={savedIds.has(savedId(paper.title, q))}
             onToggleSave={() => toggleSave(q)}
+            onFollowUp={(message) => askFollowUp(q, message)}
             onDownload={() =>
               downloadPdf({
                 title: typed ? "StudySync answer" : `${paper.title} - Q${q.number}`,
