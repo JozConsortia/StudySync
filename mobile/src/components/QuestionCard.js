@@ -1,6 +1,9 @@
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { haptics } from '../haptics';
+import { useToast } from './Toast';
 import { useTheme, useThemedStyles } from '../theme';
 import { Button, Card, Chip, ErrorBox, Gradient } from './ui';
 import SolutionView from './SolutionView';
@@ -9,11 +12,47 @@ import { ListenButton } from './VoiceButtons';
 import RichText from './RichText';
 import FollowUps from './FollowUps';
 
+/** The solution as plain text, for pasting into notes or a chat. */
+function solutionToText(question, solution) {
+  const lines = [`Q${question.number}: ${question.text}`, '', `Answer: ${solution.answer}`];
+  if (solution.steps?.length) {
+    lines.push('', 'Steps:');
+    solution.steps.forEach((s, i) => lines.push(`${i + 1}. ${s.title}`, `   ${s.detail}`));
+  }
+  if (solution.explanation) lines.push('', `Why it works: ${solution.explanation}`);
+  if (solution.tips?.length) lines.push('', 'Exam tips:', ...solution.tips.map((t) => `- ${t}`));
+  return lines.join('\n');
+}
+
 export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, onToggleSave, onDownload, onFollowUp }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(q.text);
+  const toast = useToast();
+
+  const copy = async () => {
+    await Clipboard.setStringAsync(solutionToText(q, q.solution));
+    haptics.tap();
+    toast({ message: 'Answer copied', icon: 'copy', tone: 'success' });
+  };
+
+  const toggleSave = () => {
+    if (!isSaved) {
+      haptics.success();
+      toast({ message: 'Saved — find it in the Saved tab', icon: 'bookmark', tone: 'success' });
+    }
+    onToggleSave();
+  };
+
+  // A new solution starts a new conversation, so check first when there are follow-ups to lose.
+  const redo = () => {
+    if (!q.followups?.length) return onSolve();
+    Alert.alert('Solve again?', 'A new answer replaces this one and clears its follow-up questions.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Solve again', style: 'destructive', onPress: onSolve },
+    ]);
+  };
 
   const saveEdit = () => {
     const text = draft.trim();
@@ -72,7 +111,17 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
       )}
 
       {q.status === 'idle' && !editing && (
-        <Button title="Ask StudySync Bot" icon="cpu" variant="primary" size="sm" onPress={onSolve} style={styles.start} />
+        <Button
+          title="Ask StudySync Bot"
+          icon="cpu"
+          variant="primary"
+          size="sm"
+          onPress={() => {
+            haptics.tap();
+            onSolve();
+          }}
+          style={styles.start}
+        />
       )}
 
       {q.status === 'solving' && <BotMessage thinking />}
@@ -93,10 +142,11 @@ export default function QuestionCard({ question: q, onSolve, onEdit, isSaved, on
               icon={isSaved ? 'check' : 'bookmark'}
               variant={isSaved ? 'saved' : 'default'}
               size="sm"
-              onPress={onToggleSave}
+              onPress={toggleSave}
             />
+            <Button title="Copy" icon="copy" size="sm" onPress={copy} />
             <Button title="PDF" icon="download" size="sm" onPress={onDownload} />
-            <Button title="Redo" icon="rotate-ccw" variant="ghost" size="sm" onPress={onSolve} />
+            <Button title="Redo" icon="rotate-ccw" variant="ghost" size="sm" onPress={redo} />
           </View>
         </BotMessage>
       )}

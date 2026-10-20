@@ -13,10 +13,12 @@ import { sectionContext } from '../context';
 import { BotAvatar } from '../components/Bot';
 import { MicButton } from '../components/VoiceButtons';
 import { parseRichText, summarize } from '../richtext';
-
-const looksLikeCode = (text) => parseRichText(text).some((p) => p.type === 'code');
+import { haptics } from '../haptics';
+import { useToast } from '../components/Toast';
 import { Button, Card, Chip, ErrorBox, Gradient, IconTile } from '../components/ui';
 import QuestionCard from '../components/QuestionCard';
+
+const looksLikeCode = (text) => parseRichText(text).some((p) => p.type === 'code');
 
 const SOLVE_CONCURRENCY = 3;
 const SUGGESTIONS = [
@@ -60,6 +62,8 @@ function UploadPanel({ user, stats, onExtracted }) {
     // Keep leading indentation (pasted code); only drop blank lines around the question.
     const text = typed.replace(/^\s*\n/, '').trimEnd();
     if (!text.trim()) return;
+    haptics.tap();
+    setTyped('');
     const summary = summarize(text);
     onExtracted({
       kind: 'typed',
@@ -80,26 +84,38 @@ function UploadPanel({ user, stats, onExtracted }) {
     return () => clearInterval(t);
   }, [fileName]);
 
+  // Each upload gets a number; Cancel moves the number on, so a reply that arrives later is ignored.
+  const run = useRef(0);
+
   const upload = async (file) => {
+    const id = ++run.current;
     setError('');
     setElapsed(0);
     setFileName(file.name);
     try {
       const result = await api.extract(file);
+      if (id !== run.current) return;
       if (!result.questions.length) {
+        haptics.warning();
         setError('No questions were found in this file. Try a clearer scan.');
         return;
       }
+      haptics.success();
       onExtracted({
         ...result,
         kind: 'paper',
         questions: result.questions.map((q) => ({ ...q, status: 'idle', solution: null, error: '' })),
       });
     } catch (err) {
-      setError(err.message);
+      if (id === run.current) setError(err.message);
     } finally {
-      setFileName(null);
+      if (id === run.current) setFileName(null);
     }
+  };
+
+  const cancelUpload = () => {
+    run.current += 1;
+    setFileName(null);
   };
 
   const fromImageResult = (res) => {
@@ -128,7 +144,7 @@ function UploadPanel({ user, stats, onExtracted }) {
     upload({ uri: a.uri, name: a.name || 'exam.pdf', mimeType: a.mimeType || 'application/pdf' });
   };
 
-  if (fileName) return <Processing fileName={fileName} elapsed={elapsed} />;
+  if (fileName) return <Processing fileName={fileName} elapsed={elapsed} onCancel={cancelUpload} />;
 
   const firstName = (user?.fullName || '').trim().split(/\s+/)[0];
 
@@ -196,6 +212,16 @@ function UploadPanel({ user, stats, onExtracted }) {
               onError={setError}
             />
             <View style={{ flex: 1 }} />
+            {!!typed && (
+              <Pressable
+                onPress={() => setTyped('')}
+                hitSlop={8}
+                accessibilityLabel="Clear the question"
+                style={({ pressed }) => [styles.clear, pressed && { opacity: 0.6 }]}
+              >
+                <Feather name="x" size={16} color={colors.muted} />
+              </Pressable>
+            )}
             <Pressable
               onPress={askTyped}
               disabled={!typed.trim()}
@@ -257,7 +283,7 @@ function Tile({ icon, tone, title, body, onPress }) {
 }
 
 // Shown while a paper is uploaded and read: the bot "thinks" inside pulsing rings, with a checklist of stages.
-function Processing({ fileName, elapsed }) {
+function Processing({ fileName, elapsed, onCancel }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const pulse = useRef(new Animated.Value(0)).current;
@@ -326,14 +352,36 @@ function Processing({ fileName, elapsed }) {
         })}
       </Card>
       {elapsed >= 30 && <Text style={styles.muted}>Long or scanned papers can take a minute.</Text>}
+      <Button title="Cancel" icon="x" variant="ghost" onPress={onCancel} />
     </View>
   );
 }
 
 function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
+  const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const toast = useToast();
   const [solvingAll, setSolvingAll] = useState(false);
   const [downloading, setDownloading] = useState(false);
+
+  // Scrolling past the header shows a compact bar with the progress and a way back; the question
+  // chips and the bar's arrow jump to a question.
+  const scrollRef = useRef(null);
+  const positions = useRef({}); // question id -> y inside the scroll view
+  const heroBottom = useRef(240);
+  const [compact, setCompact] = useState(false);
+  const compactAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(compactAnim, { toValue: compact ? 1 : 0, duration: 180, useNativeDriver: true }).start();
+  }, [compact, compactAnim]);
+  const onScroll = (e) => {
+    const next = e.nativeEvent.contentOffset.y > heroBottom.current - 20;
+    if (next !== compact) setCompact(next);
+  };
+  const jumpTo = (q) => {
+    haptics.select();
+    scrollRef.current?.scrollTo({ y: Math.max(0, (positions.current[q.id] ?? 0) - 76), animated: true });
+  };
   const savedIds = new Set(saved.map((s) => s.id));
   const historyId = paper.historyId;
   const typed = paper.kind === 'typed';
@@ -349,8 +397,10 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
     update(q.id, { status: 'solving', error: '', followups: [], followupFailed: null });
     try {
       update(q.id, { status: 'done', solution: await api.solve(q, paper.subject, sectionContext(paper.questions, q)) });
+      return true;
     } catch (err) {
       update(q.id, { status: 'error', error: err.message });
+      return false;
     }
   };
 
@@ -367,11 +417,20 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
   const solveAll = async () => {
     setSolvingAll(true);
     const queue = paper.questions.filter((q) => q.status !== 'done');
+    let failed = 0;
     const worker = async () => {
-      while (queue.length) await solve(queue.shift());
+      while (queue.length) if (!(await solve(queue.shift()))) failed += 1;
     };
+    haptics.tap();
     await Promise.all(Array.from({ length: SOLVE_CONCURRENCY }, worker));
     setSolvingAll(false);
+    if (failed) {
+      haptics.warning();
+      toast({ message: `${failed} ${failed === 1 ? 'question' : 'questions'} couldn't be solved — tap Retry on them`, icon: 'alert-circle', tone: 'danger' });
+    } else {
+      haptics.success();
+      toast({ message: 'Every question is solved', icon: 'check-circle', tone: 'success' });
+    }
   };
 
   const download = async (args) => {
@@ -420,86 +479,170 @@ function PaperView({ paper, setPaper, updatePaper, saved, onSave, onUnsave }) {
 
   const solvedCount = paper.questions.filter((q) => q.status === 'done').length;
   const total = paper.questions.length;
+  const nextOpen = paper.questions.find((q) => q.status === 'idle' || q.status === 'error');
+  const statusColor = (q) =>
+    ({ done: colors.success, solving: colors.accent, error: colors.danger })[q.status] || colors.borderStrong;
 
   return (
-    <KeyboardAwareScrollView contentContainerStyle={styles.page}>
-      <Gradient style={styles.paperHero}>
-        <View style={[styles.ring, { width: 180, height: 180, borderRadius: 90, top: -80, right: -50 }]} />
-        <Text style={styles.heroKicker}>{typed ? 'ASKED STUDYSYNC BOT' : 'EXAM PAPER'}</Text>
-        <Text style={styles.paperTitle}>{typed ? 'Your question' : paper.title}</Text>
-        <View style={styles.chips}>
-          {typed ? (
-            <Chip tone="glass" icon="message-square" label="Typed question" />
-          ) : (
-            <>
-              {!!paper.subject && <Chip tone="glass" icon="book-open" label={paper.subject} />}
-              <Chip tone="glass" icon="hash" label={`${total} questions`} />
-              {paper.pages > 0 && <Chip tone="glass" icon="layers" label={`${paper.pages} page${paper.pages === 1 ? '' : 's'}`} />}
-              {!!paper.method && <Chip tone="glass" icon="eye" label={METHOD_LABEL[paper.method] || paper.method} />}
-            </>
-          )}
-        </View>
-
-        {!typed && (
-          <View style={{ gap: 6 }}>
-            <View style={styles.progressLabels}>
-              <Text style={styles.heroSmall}>
-                {solvedCount} of {total} solved
-              </Text>
-              <Text style={styles.heroPercent}>{Math.round((solvedCount / total) * 100)}%</Text>
-            </View>
-            <View style={styles.track}>
-              <View style={[styles.fill, { width: `${(solvedCount / total) * 100}%` }]} />
-            </View>
+    <View style={{ flex: 1 }}>
+      <KeyboardAwareScrollView ref={scrollRef} contentContainerStyle={styles.page} onScroll={onScroll} scrollEventThrottle={32}>
+        <Gradient
+          style={styles.paperHero}
+          onLayout={(e) => (heroBottom.current = e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+        >
+          <View style={[styles.ring, { width: 180, height: 180, borderRadius: 90, top: -80, right: -50 }]} />
+          <Text style={styles.heroKicker}>{typed ? 'ASKED STUDYSYNC BOT' : 'EXAM PAPER'}</Text>
+          <Text style={styles.paperTitle}>{typed ? 'Your question' : paper.title}</Text>
+          <View style={styles.chips}>
+            {typed ? (
+              <Chip tone="glass" icon="message-square" label="Typed question" />
+            ) : (
+              <>
+                {!!paper.subject && <Chip tone="glass" icon="book-open" label={paper.subject} />}
+                <Chip tone="glass" icon="hash" label={`${total} questions`} />
+                {paper.pages > 0 && <Chip tone="glass" icon="layers" label={`${paper.pages} page${paper.pages === 1 ? '' : 's'}`} />}
+                {!!paper.method && <Chip tone="glass" icon="eye" label={METHOD_LABEL[paper.method] || paper.method} />}
+              </>
+            )}
           </View>
+
+          {!typed && (
+            <View style={{ gap: 6 }}>
+              <View style={styles.progressLabels}>
+                <Text style={styles.heroSmall}>
+                  {solvedCount} of {total} solved
+                </Text>
+                <Text style={styles.heroPercent}>{Math.round((solvedCount / total) * 100)}%</Text>
+              </View>
+              <View style={styles.track}>
+                <View style={[styles.fill, { width: `${(solvedCount / total) * 100}%` }]} />
+              </View>
+            </View>
+          )}
+
+          <View style={styles.actions}>
+            {!typed && (
+              <Button
+                title={solvingAll ? 'Solving…' : solvedCount === total ? 'All solved' : 'Solve all'}
+                icon={solvedCount === total ? 'check' : 'zap'}
+                variant="light"
+                size="sm"
+                onPress={solveAll}
+                loading={solvingAll}
+                disabled={solvedCount === total}
+              />
+            )}
+            <Button
+              title="Download PDF"
+              icon="download"
+              variant="glass"
+              size="sm"
+              loading={downloading}
+              disabled={solvedCount === 0}
+              onPress={() =>
+                download({ title: paper.title, subject: paper.subject, items: paper.questions.filter((q) => q.solution) })
+              }
+            />
+            <Button
+              title={typed ? 'New question' : 'New paper'}
+              icon="plus"
+              variant="glass"
+              size="sm"
+              onPress={() => setPaper(null)}
+            />
+          </View>
+        </Gradient>
+
+        {total > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.navRow}>
+            {paper.questions.map((q) => (
+              <Pressable
+                key={q.id}
+                onPress={() => jumpTo(q)}
+                accessibilityLabel={`Go to question ${q.number}`}
+                style={({ pressed }) => [styles.navPill, q.status === 'done' && styles.navPillDone, pressed && { opacity: 0.7 }]}
+              >
+                <View style={[styles.navDot, { backgroundColor: statusColor(q) }]} />
+                <Text style={styles.navText}>Q{q.number}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
         )}
 
-        <View style={styles.actions}>
-          {!typed && (
-            <Button
-              title={solvingAll ? 'Solving…' : solvedCount === total ? 'All solved' : 'Solve all'}
-              icon={solvedCount === total ? 'check' : 'zap'}
-              variant="light"
-              size="sm"
-              onPress={solveAll}
-              loading={solvingAll}
-              disabled={solvedCount === total}
+        {paper.questions.map((q) => (
+          <View key={q.id} onLayout={(e) => (positions.current[q.id] = e.nativeEvent.layout.y)}>
+            <QuestionCard
+              question={q}
+              onSolve={() => solve(q)}
+              onEdit={(text) => update(q.id, { text, status: 'idle', solution: null, error: '', followups: [] })}
+              isSaved={savedIds.has(savedId(paper.title, q))}
+              onToggleSave={() => toggleSave(q)}
+              onFollowUp={(message) => askFollowUp(q, message)}
+              onDownload={() => download({ title: `${paper.title} - Q${q.number}`, subject: paper.subject, items: [q] })}
             />
-          )}
-          <Button
-            title="Download PDF"
-            icon="download"
-            variant="glass"
-            size="sm"
-            loading={downloading}
-            disabled={solvedCount === 0}
-            onPress={() =>
-              download({ title: paper.title, subject: paper.subject, items: paper.questions.filter((q) => q.solution) })
-            }
-          />
-          <Button
-            title={typed ? 'New question' : 'New paper'}
-            icon="plus"
-            variant="glass"
-            size="sm"
-            onPress={() => setPaper(null)}
-          />
-        </View>
-      </Gradient>
+          </View>
+        ))}
 
-      {paper.questions.map((q) => (
-        <QuestionCard
-          key={q.id}
-          question={q}
-          onSolve={() => solve(q)}
-          onEdit={(text) => update(q.id, { text, status: 'idle', solution: null, error: '', followups: [] })}
-          isSaved={savedIds.has(savedId(paper.title, q))}
-          onToggleSave={() => toggleSave(q)}
-          onFollowUp={(message) => askFollowUp(q, message)}
-          onDownload={() => download({ title: `${paper.title} - Q${q.number}`, subject: paper.subject, items: [q] })}
+        <Button
+          title={typed ? 'Ask another question' : 'Scan another paper'}
+          icon="plus"
+          onPress={() => setPaper(null)}
+          style={{ marginTop: 4 }}
         />
-      ))}
-    </KeyboardAwareScrollView>
+      </KeyboardAwareScrollView>
+
+      {/* Compact bar shown once the header has scrolled away. */}
+      <Animated.View
+        pointerEvents={compact ? 'box-none' : 'none'}
+        style={[
+          styles.compactWrap,
+          {
+            opacity: compactAnim,
+            transform: [{ translateY: compactAnim.interpolate({ inputRange: [0, 1], outputRange: [-12, 0] }) }],
+          },
+        ]}
+      >
+        <View style={styles.compactBar}>
+          <Pressable onPress={() => setPaper(null)} hitSlop={8} style={styles.compactBtn} accessibilityLabel="Close this paper">
+            <Feather name="arrow-left" size={18} color={colors.text} />
+          </Pressable>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.compactTitle} numberOfLines={1}>
+              {typed ? 'Your question' : paper.title}
+            </Text>
+            {!typed && (
+              <View style={styles.compactTrack}>
+                <Gradient style={[styles.compactFill, { width: `${(solvedCount / total) * 100}%` }]} />
+              </View>
+            )}
+          </View>
+          {!typed && (
+            <Text style={styles.compactCount}>
+              {solvedCount}/{total}
+            </Text>
+          )}
+          {nextOpen ? (
+            <Pressable
+              onPress={() => jumpTo(nextOpen)}
+              hitSlop={8}
+              style={[styles.compactBtn, { backgroundColor: colors.accentSoft }]}
+              accessibilityLabel={`Go to the next unsolved question, Q${nextOpen.number}`}
+            >
+              <Feather name="arrow-down" size={18} color={colors.accent} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+              hitSlop={8}
+              style={styles.compactBtn}
+              accessibilityLabel="Back to the top"
+            >
+              <Feather name="arrow-up" size={18} color={colors.text} />
+            </Pressable>
+          )}
+        </View>
+      </Animated.View>
+    </View>
   );
 }
 
@@ -570,6 +713,14 @@ const makeStyles = (colors) =>
   codeInput: { fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), fontSize: 13 },
   askActions: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 4 },
   send: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  clear: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface2,
+  },
   suggestions: { gap: 8, paddingRight: 4 },
   suggestion: {
     flexDirection: 'row',
@@ -642,4 +793,48 @@ const makeStyles = (colors) =>
   track: { height: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.22)', overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 8, backgroundColor: '#fff' },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+
+  // question chips
+  navRow: { gap: 8, paddingRight: 4 },
+  navPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  navPillDone: { borderColor: colors.doneBorder },
+  navDot: { width: 8, height: 8, borderRadius: 4 },
+  navText: { color: colors.text, fontWeight: '700', fontSize: 13 },
+
+  // compact bar
+  compactWrap: { position: 'absolute', top: 6, left: 12, right: 12 },
+  compactBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 6,
+    paddingRight: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.tabBar,
+    boxShadow: `0 8px 24px ${colors.shadow}33`,
+  },
+  compactBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface2,
+  },
+  compactTitle: { color: colors.text, fontWeight: '800', fontSize: 14.5 },
+  compactTrack: { height: 4, marginTop: 5, borderRadius: 4, backgroundColor: colors.surface3, overflow: 'hidden' },
+  compactFill: { height: '100%', borderRadius: 4 },
+  compactCount: { color: colors.muted, fontWeight: '800', fontSize: 13 },
 });

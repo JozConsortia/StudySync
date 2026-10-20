@@ -52,7 +52,7 @@ export default function SavedScreen({ saved, onUnsave, onScan, syncedAt, onRefre
           <SearchBar value={query} onChangeText={setQuery} placeholder="Search saved answers" />
         </View>
         <Button
-          title={query ? 'Results' : 'All'}
+          title="PDF"
           icon="download"
           variant="primary"
           size="sm"

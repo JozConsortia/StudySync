@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
@@ -13,6 +13,8 @@ import { clearLegacyData, readLegacyData } from './src/legacy';
 import { Backdrop, Button, Gradient, IconButton } from './src/components/ui';
 import Logo from './src/components/Logo';
 import { stopSpeaking } from './src/speech';
+import { haptics } from './src/haptics';
+import { ToastProvider, useToast } from './src/components/Toast';
 import AuthScreen from './src/screens/AuthScreen';
 import ScanScreen from './src/screens/ScanScreen';
 import SavedScreen from './src/screens/SavedScreen';
@@ -41,7 +43,10 @@ function Shell() {
       {/* Light status bar text on the dark theme, dark text on the bright theme. */}
       <StatusBar style={mode === 'dark' ? 'light' : 'dark'} backgroundColor={colors.bg} />
       <SafeAreaView style={styles.root} edges={['top', 'left', 'right', 'bottom']}>
-        <Main />
+        {/* Toasts sit just above the floating tab bar. */}
+        <ToastProvider bottom={92}>
+          <Main />
+        </ToastProvider>
       </SafeAreaView>
     </>
   );
@@ -58,7 +63,18 @@ function Main() {
   const styles = useThemedStyles(makeStyles);
   const [user, setUser] = useState(null);
   const [booting, setBooting] = useState(true);
-  const [tab, setTab] = useState('scan');
+  const [tab, setTabState] = useState('scan');
+  // Tabs stay mounted once opened, so a half-typed question, a scroll position or a challenge
+  // in progress is still there after a look at another tab.
+  const [visited, setVisited] = useState(() => new Set(['scan']));
+  const setTab = useCallback((next) => {
+    setTabState((current) => {
+      if (current !== next) haptics.select();
+      return next;
+    });
+    setVisited((v) => (v.has(next) ? v : new Set(v).add(next)));
+  }, []);
+  const toast = useToast();
   const [challengeStats, setChallengeStats] = useState(null);
   const [paper, setPaper] = useState(null);
   const [saved, setSaved] = useState([]);
@@ -178,6 +194,24 @@ function Main() {
     if (tab !== 'scan' && dataStatus === 'ready') refreshFromServer();
   }, [tab, dataStatus, refreshFromServer]);
 
+  // Android back button: other tabs go back to Scan, an open paper closes (it stays in History),
+  // and only then does the app close.
+  useEffect(() => {
+    if (!user) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (tab !== 'scan') {
+        setTab('scan');
+        return true;
+      }
+      if (paperRef.current) {
+        setPaper(null);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [user, tab, setTab]);
+
   // ---------- history
 
   const persistEntry = useCallback(
@@ -225,13 +259,36 @@ function Main() {
   };
 
   // Deleting the paper that is open also closes it, otherwise the next solve would re-add it.
+  // An Undo puts the entry back (in date order) and saves it again.
   const deleteHistory = (id) => {
-    setHistory((list) => list.filter((e) => e.id !== id));
+    const entry = historyRef.current.find((e) => e.id === id);
+    const next = historyRef.current.filter((e) => e.id !== id);
+    historyRef.current = next;
+    setHistory(next);
     if (paperRef.current?.historyId === id) setPaper(null);
     sync.enqueue(`h:${id}`, () => api.history.remove(id));
+    haptics.warning();
+    if (!entry) return;
+    toast({
+      message: 'Removed from history',
+      icon: 'trash-2',
+      action: {
+        label: 'Undo',
+        onPress: () => {
+          const restored = [...historyRef.current.filter((e) => e.id !== id), entry].sort(
+            (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
+          );
+          historyRef.current = restored;
+          setHistory(restored);
+          persistEntry(entry);
+        },
+      },
+    });
   };
 
   const clearHistory = () => {
+    haptics.warning();
+    historyRef.current = [];
     setHistory([]);
     setPaper(null);
     sync.dropPending('h:');
@@ -245,9 +302,31 @@ function Main() {
     sync.enqueue(`s:${item.id}`, () => api.saved.add(toSavedPayload(item)));
   };
 
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
+
+  // An Undo puts the answer back where it was and saves it again.
   const unsaveAnswer = (key) => {
+    const index = savedRef.current.findIndex((s) => s.id === key);
+    const item = savedRef.current[index];
     setSaved((list) => list.filter((s) => s.id !== key));
     sync.enqueue(`s:${key}`, () => api.saved.remove(key));
+    haptics.tap();
+    if (!item) return;
+    toast({
+      message: 'Removed from Saved',
+      icon: 'bookmark',
+      action: {
+        label: 'Undo',
+        onPress: () => {
+          setSaved((list) => {
+            const rest = list.filter((s) => s.id !== key);
+            return [...rest.slice(0, index), item, ...rest.slice(index)];
+          });
+          sync.enqueue(`s:${key}`, () => api.saved.add(toSavedPayload(item)));
+        },
+      },
+    });
   };
 
   // ---------- auth
@@ -262,7 +341,8 @@ function Main() {
     await tokenStore.set(null);
     setUser(null);
     setPaper(null);
-    setTab('scan');
+    setTabState('scan');
+    setVisited(new Set(['scan']));
   };
 
   const logout = () => {
@@ -330,7 +410,7 @@ function Main() {
       )}
 
       <View style={{ flex: 1 }}>
-        {tab === 'scan' && (
+        <Pane name="scan" tab={tab} visited={visited}>
           <ScanScreen
             user={user}
             stats={{ history: history.length, saved: saved.length }}
@@ -342,9 +422,9 @@ function Main() {
             onSave={saveAnswer}
             onUnsave={unsaveAnswer}
           />
-        )}
-        {tab === 'history' &&
-          (dataGate || (
+        </Pane>
+        <Pane name="history" tab={tab} visited={visited}>
+          {dataGate || (
             <HistoryScreen
               history={history}
               activeId={paper?.historyId}
@@ -355,9 +435,10 @@ function Main() {
               syncedAt={syncedAt}
               onRefresh={refreshFromServer}
             />
-          ))}
-        {tab === 'saved' &&
-          (dataGate || (
+          )}
+        </Pane>
+        <Pane name="saved" tab={tab} visited={visited}>
+          {dataGate || (
             <SavedScreen
               saved={saved}
               onUnsave={unsaveAnswer}
@@ -365,17 +446,21 @@ function Main() {
               syncedAt={syncedAt}
               onRefresh={refreshFromServer}
             />
-          ))}
-        {tab === 'challenges' && <ChallengesScreen onStats={setChallengeStats} />}
-        {tab === 'me' && (
+          )}
+        </Pane>
+        <Pane name="challenges" tab={tab} visited={visited}>
+          <ChallengesScreen onStats={setChallengeStats} />
+        </Pane>
+        <Pane name="me" tab={tab} visited={visited}>
           <AccountScreen
             user={user}
+            active={tab === 'me'}
             stats={challengeStats}
             onAuth={onAuth}
             onSignOut={logout}
             onOpenChallenges={() => setTab('challenges')}
           />
-        )}
+        </Pane>
       </View>
 
       {/* Floating tab bar; Scan sits in the middle as a raised gradient button. */}
@@ -407,11 +492,24 @@ function Main() {
   );
 }
 
+/** A tab's screen: mounted the first time it is opened, then hidden (not unmounted) while another tab shows. */
+function Pane({ name, tab, visited, children }) {
+  if (tab !== name && !visited.has(name)) return null;
+  return <View style={[{ flex: 1 }, tab !== name && { display: 'none' }]}>{children}</View>;
+}
+
 function TabButton({ icon, label, active, onPress, badge }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   return (
-    <Pressable style={styles.tab} onPress={onPress} accessibilityRole="tab" accessibilityState={{ selected: active }}>
+    <Pressable
+      style={styles.tab}
+      onPress={onPress}
+      hitSlop={{ top: 8, bottom: 8 }}
+      accessibilityRole="tab"
+      accessibilityLabel={badge ? `${label}, ${badge}` : label}
+      accessibilityState={{ selected: active }}
+    >
       <View style={[styles.tabIcon, active && styles.tabIconActive]}>
         <Feather name={icon} size={20} color={active ? colors.accent : colors.muted} />
         {!!badge && (

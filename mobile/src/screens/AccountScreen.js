@@ -9,18 +9,24 @@ import { Card, Gradient, IconTile } from '../components/ui';
 import ResetPassword from '../components/ResetPassword';
 
 /** The "Me" tab: profile, learning stats, appearance, password and sign out. */
-export default function AccountScreen({ user, stats: initialStats, onAuth, onSignOut, onOpenChallenges }) {
+export default function AccountScreen({ user, active = true, stats: initialStats, onAuth, onSignOut, onOpenChallenges }) {
   const { colors, mode, toggle } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [stats, setStats] = useState(initialStats);
   const [changing, setChanging] = useState(false);
 
+  // Newer numbers from the Daily tab show straight away; the server is asked each time this tab opens.
   useEffect(() => {
+    if (initialStats) setStats(initialStats);
+  }, [initialStats]);
+
+  useEffect(() => {
+    if (!active) return;
     api.challenges
       .stats(localDay())
       .then(setStats)
       .catch(() => {});
-  }, []);
+  }, [active]);
 
   const initials = (user.fullName || user.email || '?')
     .split(/\s+/)

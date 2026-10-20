@@ -9,6 +9,7 @@ import { Button, Card, Chip, ErrorBox, Gradient } from '../components/ui';
 import { BotAvatar, BotMessage } from '../components/Bot';
 import { MicButton } from '../components/VoiceButtons';
 import RichText from '../components/RichText';
+import { haptics } from '../haptics';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -211,7 +212,10 @@ function ChallengeCard({ day, item, position, total, onAnswered, onPrev, onNext,
     setError('');
     setBusy(true);
     try {
-      onAnswered(await api.challenges.answer(day, item.id, item.type === 'mcq' ? { choice } : { answer: draft }));
+      const res = await api.challenges.answer(day, item.id, item.type === 'mcq' ? { choice } : { answer: draft });
+      const answered = res.challenge.items.find((c) => c.id === item.id);
+      ({ correct: haptics.success, partly: haptics.warning }[answered && outcome(answered)] || haptics.error)();
+      onAnswered(res);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -247,7 +251,10 @@ function ChallengeCard({ day, item, position, total, onAnswered, onPrev, onNext,
               <Pressable
                 key={i}
                 disabled={!!result || busy}
-                onPress={() => setChoice(i)}
+                onPress={() => {
+                  haptics.select();
+                  setChoice(i);
+                }}
                 style={({ pressed }) => [
                   styles.option,
                   picked && !result && styles.optionPicked,
